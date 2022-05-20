@@ -1,0 +1,105 @@
+#! /bin/sh
+# Manage git tokens with password encrypted files.
+#
+# To save a token: git-token adam xxyyzz
+# The program will encrypt with gnupg a file named "adam"
+# containing "xxyyzz" to the directory ~/.local/share/git-token.
+#
+# To load a token: git-token adam
+# The program will try to decrypt the file
+# ~/.local/share/git-token/adam and put the content in the
+# clipboard using xclip as well as in ~/.git-credentials for a
+# limited time (10m).
+#
+# Dependencies: gnupg, xclip
+#
+# Creator: Kaj Munhoz Arfvidsson
+
+DATA_DIR="$HOME/.local/share/git-token"
+GIT_CRED="$HOME/.git-credentials"
+
+usage() {
+    echo Usage: git-token [-hr] USERNAME [TOKEN]
+}
+
+panic() {
+    [ $# -gt 0 ] && echo Error: "$@"
+    usage
+    exit 0
+}
+
+help() {
+    usage
+    cat << EOF
+Manage git tokens with password protected files.
+
+Options:
+    -h      Show this help message
+    -r      Remove token with name USERNAME
+
+To save a token: git-token adam xxyyzz
+The program will encrypt with gnupg a file named "adam"
+containing "xxyyzz" to the directory ~/.local/share/git-token.
+
+To load a token: git-token adam
+The program will try to decrypt the file
+~/.local/share/git-token/adam and put the content in the
+clipboard using xclip as well as in ~/.git-credentials for a
+limited time (10m).
+EOF
+}
+
+index() {
+    shift $1
+    [ -z $1 ] && panic "This index is empty"
+    echo $1
+}
+
+# parse program arguments
+while getopts ":hrf-::" OPT; do
+    if [ "$OPT" = "-" ]; then
+        # support for long arguments
+        OPT="${OPTARG%%=*}"
+        OPTARG="${OPTARG#$OPT}"
+        OPTARG="${OPTARG#=}"
+    fi
+    case $OPT in
+        h | help ) help ; exit 0 ;;
+        r | remove) REMOVE=1 ;;
+        * ) panic "Unrecognized option \"$OPT\"" ;;
+    esac
+done
+
+# get program arguments
+case $# in
+    1 ) USERNAME=$(index $OPTIND $@) ;;
+    2 ) USERNAME=$(index $OPTIND $@) ; [ ! $REMOVE ] && TOKEN=$(index $(($OPTIND+1)) $@);;
+    * )
+        [ $# -lt 1 ] && panic "Missing argument USERNAME"
+        [ $# -gt 2 ] && panic "Too many arguments"
+    ;;
+esac
+
+# remove option
+[ $REMOVE ] && [ -f "$DATA_DIR/$USERNAME" ] && rm "$DATA_DIR/$USERNAME" && exit 0
+
+# get token from stdin if the token is, e.g. piped in
+[ -p /dev/stdin ] && read -r line && TOKEN=$line
+
+# check deps
+[ ! "$(command -v gpg)" ] && panic "Missing dependency \"gnupg\""
+[ ! "$(command -v xclip)" ] && panic "Missing dependency \"xclip\""
+
+# encrypt/decrypt
+if [ -n "$TOKEN" ]; then
+    [ ! -d "$DATA_DIR" ] && mkdir -p "$DATA_DIR"
+    [ -f "$DATA_DIR/$USERNAME" ] && panic "This name already exists"
+    echo "$TOKEN" | gpg -o "$DATA_DIR/$USERNAME" -c
+elif [ -f "$DATA_DIR/$USERNAME" ]; then
+    SECRET=$(gpg -d "$DATA_DIR/$USERNAME" 2> /dev/null)
+    nohup sh -c "sleep 10m && [ -f '$GIT_CRED' ] && rm '$GIT_CRED'" >/dev/null 2>&1 &
+    echo $SECRET | xclip -sel clipboard
+    echo "Token \"$SECRET\" written to clipboard and saved to git-credentials for 10 min."
+else
+    panic "File $DATA_DIR/$USERNAME does not exist"
+fi
