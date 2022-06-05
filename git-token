@@ -50,9 +50,9 @@ EOF
 }
 
 index() {
-    shift $1
-    [ -z $1 ] && panic "This index is empty"
-    echo $1
+    shift "$1"
+    [ -z "$1" ] && panic "This index is empty"
+    echo "$1"
 }
 
 # parse program arguments
@@ -72,8 +72,8 @@ done
 
 # get program arguments
 case $# in
-    1 ) USERNAME=$(index $OPTIND $@) ;;
-    2 ) USERNAME=$(index $OPTIND $@) ; [ ! $REMOVE ] && TOKEN=$(index $(($OPTIND+1)) $@);;
+    1 ) USERNAME=$(index $OPTIND "$@") ;;
+    2 ) USERNAME=$(index $OPTIND "$@") ; [ ! $REMOVE ] && TOKEN=$(index $((OPTIND+1)) "$@");;
     * )
         [ $# -lt 1 ] && panic "Missing argument USERNAME"
         [ $# -gt 2 ] && panic "Too many arguments"
@@ -90,15 +90,22 @@ esac
 [ ! "$(command -v gpg)" ] && panic "Missing dependency \"gnupg\""
 [ ! "$(command -v xclip)" ] && panic "Missing dependency \"xclip\""
 
+# Retrieve password
+stty -echo
+printf "Password: "
+read -r PASSWD
+stty echo
+printf "\n"
+
 # encrypt/decrypt
 if [ -n "$TOKEN" ]; then
     [ ! -d "$DATA_DIR" ] && mkdir -p "$DATA_DIR"
     [ -f "$DATA_DIR/$USERNAME" ] && panic "This name already exists"
-    echo "$TOKEN" | gpg -o "$DATA_DIR/$USERNAME" -c
+    echo "$TOKEN" | gpg --batch --passphrase "$PASSWD" -o "$DATA_DIR/$USERNAME" -c
 elif [ -f "$DATA_DIR/$USERNAME" ]; then
-    SECRET=$(gpg -d "$DATA_DIR/$USERNAME" 2> /dev/null)
+    SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$DATA_DIR/$USERNAME" 2> /dev/null)
     nohup sh -c "sleep 10m && [ -f '$GIT_CRED' ] && rm '$GIT_CRED'" >/dev/null 2>&1 &
-    echo $SECRET | xclip -sel clipboard
+    echo "$SECRET" | xclip -sel clipboard
     echo "Token \"$SECRET\" written to clipboard and saved to git-credentials for 10 min."
 else
     panic "File $DATA_DIR/$USERNAME does not exist"
