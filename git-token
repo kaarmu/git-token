@@ -7,11 +7,10 @@
 #
 # To load a token: git-token adam
 # The program will try to decrypt the file
-# ~/.local/share/git-token/adam and put the content in the
-# clipboard using xclip as well as in ~/.git-credentials for a
-# limited time (10m).
+# ~/.local/share/git-token/adam and print the contents, as well as,
+# save the token in ~/.git-credentials for a limited time (10m).
 #
-# Dependencies: gnupg, xclip
+# Dependencies: gnupg
 #
 # Creator: Kaj Munhoz Arfvidsson
 
@@ -43,9 +42,8 @@ containing "xxyyzz" to the directory ~/.local/share/git-token.
 
 To load a token: git-token adam
 The program will try to decrypt the file
-~/.local/share/git-token/adam and put the content in the
-clipboard using xclip as well as in ~/.git-credentials for a
-limited time (10m).
+~/.local/share/git-token/adam and print the contents, as well as,
+save the token in ~/.git-credentials for a limited time (10m).
 EOF
 }
 
@@ -88,7 +86,6 @@ esac
 
 # check deps
 [ ! "$(command -v gpg)" ] && panic "Missing dependency \"gnupg\""
-[ ! "$(command -v xclip)" ] && panic "Missing dependency \"xclip\""
 
 # Retrieve password
 stty -echo
@@ -105,7 +102,6 @@ if [ -n "$TOKEN" ]; then
 elif [ -f "$DATA_DIR/$USERNAME" ]; then
     SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$DATA_DIR/$USERNAME" 2> /dev/null)
     nohup sh -c "sleep 10m && [ -f '$GIT_CRED' ] && rm '$GIT_CRED'" >/dev/null 2>&1 &
-    echo "$SECRET" | xclip -sel clipboard
     echo "Token \"$SECRET\" written to clipboard and saved to git-credentials for 10 min."
 else
     panic "File $DATA_DIR/$USERNAME does not exist"
