@@ -1,30 +1,25 @@
 #! /bin/sh
 # Manage git tokens with password encrypted files.
 #
-# To save a token: git-token adam xxyyzz
-# The program will encrypt with gnupg a file named "adam"
-# containing "xxyyzz" to the directory ~/.local/share/git-token.
-#
-# To load a token: git-token adam
-# The program will try to decrypt the file
-# ~/.local/share/git-token/adam and print the contents, as well as,
-# save the token in ~/.git-credentials for a limited time (10m).
-#
-# Dependencies: gnupg
-#
-# Creator: Kaj Munhoz Arfvidsson
+# Author: Kaj Munhoz Arfvidsson
+
+
+###############
+## CONSTANTS ##
+###############
+
 
 DATA_DIR="$HOME/.local/share/git-token"
 GIT_CRED="$HOME/.git-credentials"
 
-usage() {
-    echo Usage: git-token [-hr] USERNAME [TOKEN]
-}
 
-panic() {
-    [ $# -gt 0 ] && echo Error: "$@"
-    usage
-    exit 0
+###############
+## FUNCTIONS ##
+###############
+
+
+usage() {
+    echo 'Usage: git-token [-hr] USERNAME [TOKEN]'
 }
 
 help() {
@@ -33,8 +28,9 @@ help() {
 Manage git tokens with password protected files.
 
 Options:
-    -h      Show this help message
-    -r      Remove token with name USERNAME
+    -h, --help          Show this help message
+    -r, --remove        Remove token with name USERNAME
+    -e, --enable        Enable git credentials in the local repository
 
 To save a token: git-token adam xxyyzz
 The program will encrypt with gnupg a file named "adam"
@@ -47,11 +43,27 @@ save the token in ~/.git-credentials for a limited time (10m).
 EOF
 }
 
+panic() {
+    [ $# -gt 0 ] && echo Error: "$@"
+    usage
+    exit 0
+}
+
 index() {
     shift "$1"
     [ -z "$1" ] && panic "This index is empty"
     echo "$1"
 }
+
+
+############
+## SCRIPT ##
+############
+
+
+# default program arguments
+REMOVE=0
+ENABLE=0
 
 # parse program arguments
 while getopts ":hrf-::" OPT; do
@@ -64,6 +76,7 @@ while getopts ":hrf-::" OPT; do
     case $OPT in
         h | help ) help ; exit 0 ;;
         r | remove) REMOVE=1 ;;
+        e | enable) ENABLE=1 ;;
         * ) panic "Unrecognized option \"$OPT\"" ;;
     esac
 done
@@ -80,6 +93,9 @@ esac
 
 # remove option
 [ $REMOVE ] && [ -f "$DATA_DIR/$USERNAME" ] && rm "$DATA_DIR/$USERNAME" && exit 0
+
+# enable git credentials option
+[ $ENABLE ] && git config credential.helper store
 
 # get token from stdin if the token is, e.g. piped in
 [ -p /dev/stdin ] && read -r line && TOKEN=$line
@@ -101,8 +117,10 @@ if [ -n "$TOKEN" ]; then
     echo "$TOKEN" | gpg --batch --passphrase "$PASSWD" -o "$DATA_DIR/$USERNAME" -c
 elif [ -f "$DATA_DIR/$USERNAME" ]; then
     SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$DATA_DIR/$USERNAME" 2> /dev/null)
-    nohup sh -c "sleep 10m && [ -f '$GIT_CRED' ] && rm '$GIT_CRED'" >/dev/null 2>&1 &
+    echo "rm '$GIT_CRED'" | at now +10 minutes 2> /dev/null
     echo "Token \"$SECRET\" written to clipboard and saved to git-credentials for 10 min."
 else
     panic "File $DATA_DIR/$USERNAME does not exist"
 fi
+
+
