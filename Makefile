@@ -10,3 +10,9 @@ install:
 	[ -d tokens ] && install tokens/* "${HOME}/.local/share/git-token/"
 	# Install the git-token script
 	install -m=775 ./git-token ${HOME}/.local/bin/git-token
+
+uninstall:
+	# Remove tokens
+	rm -r "${HOME}/.local/share/git-token"
+	# Remove script
+	rm "${HOME}/.local/bin/git-token"
