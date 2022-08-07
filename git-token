@@ -11,6 +11,7 @@
 
 DATA_DIR="$HOME/.local/share/git-token"
 GIT_CRED="$HOME/.git-credentials"
+DOMAIN="github.com"
 
 
 ###############
@@ -139,6 +140,7 @@ if [ -n "$TOKEN" ]; then
     echo "$TOKEN" | gpg --batch --passphrase "$PASSWD" -o "$DATA_DIR/$USERNAME" -c
 elif [ -f "$DATA_DIR/$USERNAME" ]; then
     SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$DATA_DIR/$USERNAME" 2> /dev/null)
+    echo "https://$USERNAME:$SECRET@$DOMAIN" > "$GIT_CRED"
     echo "[ -f '$GIT_CRED' ] && rm '$GIT_CRED'" | at now +10 minutes 2> /dev/null
     echo "Token \"$SECRET\" written to clipboard and saved to git-credentials for 10 min."
 else
