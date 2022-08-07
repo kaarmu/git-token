@@ -19,7 +19,7 @@ GIT_CRED="$HOME/.git-credentials"
 
 
 usage() {
-    echo 'Usage: git-token [-hr] USERNAME [TOKEN]'
+    echo 'Usage: git-token [-her] USERNAME [TOKEN]'
 }
 
 help() {
@@ -43,16 +43,28 @@ save the token in ~/.git-credentials for a limited time (10m).
 EOF
 }
 
+# Print error and exit
 panic() {
-    [ $# -gt 0 ] && echo Error: "$@"
+    [ $# -gt 0 ] && echo "$*"
     usage
-    exit 0
+    exit 1
 }
 
+# Retrieve argument at index
 index() {
     shift "$1"
     [ -z "$1" ] && panic "This index is empty"
     echo "$1"
+}
+
+# Enable git credentials
+_enable() {
+    git config credential.store helper
+}
+
+# Remove user token
+_remove() {
+    rm "$DATA_DIR/$1"    
 }
 
 
@@ -64,9 +76,11 @@ index() {
 # default program arguments
 REMOVE=0
 ENABLE=0
+USERNAME=""
+TOKEN=""
 
 # parse program arguments
-while getopts ":hrf-::" OPT; do
+while getopts ":her-::" OPT; do
     if [ "$OPT" = "-" ]; then
         # support for long arguments
         OPT="${OPTARG%%=*}"
@@ -75,33 +89,41 @@ while getopts ":hrf-::" OPT; do
     fi
     case $OPT in
         h | help ) help ; exit 0 ;;
-        r | remove) REMOVE=1 ;;
         e | enable) ENABLE=1 ;;
+        r | remove) REMOVE=1 ;;
         * ) panic "Unrecognized option \"$OPT\"" ;;
     esac
 done
 
 # get program arguments
-case $# in
-    1 ) USERNAME=$(index $OPTIND "$@") ;;
-    2 ) USERNAME=$(index $OPTIND "$@") ; [ ! $REMOVE ] && TOKEN=$(index $((OPTIND+1)) "$@");;
+case "$#" in
+    1 ) 
+        # git-token -e
+        [ "$ENABLE" -ne 0 ] && _enable && exit 0
+        # git-token user
+        USERNAME=$(index $OPTIND "$@") 
+        ;;
+    2 ) 
+        USERNAME=$(index $OPTIND "$@")
+	# (remove user) git-token -r user 
+        [ $REMOVE -ne 0 ] && [ -f "$DATA_DIR/$USERNAME" ] && _remove "$USERNAME" && exit 0
+	# (enable and load user) git-token -e user 
+        [ $ENABLE -ne 0 ] && _enable
+        # git-token user token
+        [ $# -gt $OPTIND ] && TOKEN=$(index "$#" "$@")
+        ;;
     * )
         [ $# -lt 1 ] && panic "Missing argument USERNAME"
         [ $# -gt 2 ] && panic "Too many arguments"
-    ;;
+        ;;
 esac
-
-# remove option
-[ $REMOVE ] && [ -f "$DATA_DIR/$USERNAME" ] && rm "$DATA_DIR/$USERNAME" && exit 0
-
-# enable git credentials option
-[ $ENABLE ] && git config credential.helper store
 
 # get token from stdin if the token is, e.g. piped in
 [ -p /dev/stdin ] && read -r line && TOKEN=$line
 
 # check deps
-[ ! "$(command -v gpg)" ] && panic "Missing dependency \"gnupg\""
+[ ! "$(command -v gpg)" ] && panic 'Missing dependency "gnupg"'
+[ ! "$(command -v at)" ] && panic 'Missing dependency "at"'
 
 # Retrieve password
 stty -echo
@@ -117,7 +139,7 @@ if [ -n "$TOKEN" ]; then
     echo "$TOKEN" | gpg --batch --passphrase "$PASSWD" -o "$DATA_DIR/$USERNAME" -c
 elif [ -f "$DATA_DIR/$USERNAME" ]; then
     SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$DATA_DIR/$USERNAME" 2> /dev/null)
-    echo "rm '$GIT_CRED'" | at now +10 minutes 2> /dev/null
+    echo "[ -f '$GIT_CRED' ] && rm '$GIT_CRED'" | at now +10 minutes 2> /dev/null
     echo "Token \"$SECRET\" written to clipboard and saved to git-credentials for 10 min."
 else
     panic "File $DATA_DIR/$USERNAME does not exist"
