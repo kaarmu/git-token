@@ -10,7 +10,6 @@
 
 
 DATA_DIR="$HOME/.local/share/git-token"
-GIT_CRED="$HOME/.git-credentials"
 
 
 ###############
@@ -19,7 +18,7 @@ GIT_CRED="$HOME/.git-credentials"
 
 
 usage() {
-    echo 'Usage: git-token [-herf] USERNAME [TOKEN]'
+    echo 'Usage: git-token [OPTIONS] USERNAME [TOKEN]'
 }
 
 help() {
@@ -27,13 +26,15 @@ help() {
     cat << EOF
 Manage git tokens with password protected files.
 
-Options:
-    -h, --help          Show this help message
-    -r, --remove        Remove token with name USERNAME
-    -e, --enable        Enable git credentials in the local repository
-    -f, --force         Write over any existing token
-    -d DOMAIN           Set the git domain, default is "github.com"
-        --domain=DOMAIN
+OPTIONS
+    -h, --help          Show this help message.
+    -e, --enable        Enable git credential-cache in the local repository.
+    -t SEC              Set git credential-cache timeout to SECONDS, only used
+	--timeout=SEC     with -e option (default "900").
+    -r, --remove        Remove token with name USERNAME.
+    -u URL              Set the git domain url, must be used with password
+	--url=URL         decryption (default "github.com").
+    -f, --force         Write over any existing token.
 
 To save a token: git-token adam xxyyzz
 The program will encrypt with gnupg a file named "adam"
@@ -41,26 +42,46 @@ containing "xxyyzz" to the directory ~/.local/share/git-token.
 
 To load a token: git-token adam
 The program will try to decrypt the file
-~/.local/share/git-token/adam and print the contents, as well as,
-save the token in ~/.git-credentials for a limited time (10m).
+~/.local/share/git-token/adam, print the contents, and call
+git credential to save the login credentials for a limited time.
 EOF
 }
 
 # Print error and exit
+# > panic [CODE] MESSAGE
 panic() {
-    [ $# -gt 0 ] && echo "Error: $*"
+    [ $# -gt 1 ] && CODE=$1 && shift || CODE=1
+    echo "Error ($CODE): $1"
     usage
-    exit 1
+    exit $CODE
+}
+
+# Assert there exist commands 
+# > assert_command [COMMANDS...]
+assert_command() {
+    for cmd in "$@"; do
+        [ ! "$(command -v "$cmd")" ] && panic "Missing command \"$cmd\". Is it installed?"
+    done
 }
 
 # Enable git credentials
 _enable() {
-    git config --global credential.store helper
+    git config --global credential.helper "cache --timeout $1" || exit $?
 }
 
 # Remove user token
 _remove() {
-    rm "$DATA_DIR/$1"    
+    rm "$DATA_DIR/$1" || exit $?
+}
+
+# Approve git credential with _approve URL USERNAME PASSWORD
+_approve() {
+    git credential approve << EOF
+url=$1
+username=$2
+password=$3
+EOF
+return $?
 }
 
 
@@ -69,11 +90,14 @@ _remove() {
 ############
 
 
+assert_command git gpg
+
 # program arguments
 REMOVE=0
 ENABLE=0
 FORCE=0
-DOMAIN="github.com"
+TIMEOUT=900
+URL="https://github.com"
 USERNAME=""
 TOKEN=""
 
@@ -87,12 +111,13 @@ while getopts ":herfd:-:" OPT; do
     case $OPT in
         h | help ) help ; exit 0 ;;
         e | enable) ENABLE=1 ;;
+	t | timeout) TIMEOUT="$OPTARG" ;;
         r | remove) REMOVE=1 ;;
-	f | force) FORCE=1 ;;
-	d | domain) 
-	    DOMAIN="$OPTARG" 
-	    [ -z "$DOMAIN" ] && panic "Missing argument to \"$OPT\"" 
+	u | url) 
+	    URL="$OPTARG" 
+	    [ -z "$URL" ] && panic "Missing argument to \"$OPT\"" 
 	    ;;
+	f | force) FORCE=1 ;;
 	: ) panic "Missing argument to \"$OPTARG\"" ;;
         * ) panic "Unrecognized option \"$OPTARG\"" ;;
     esac
@@ -102,18 +127,18 @@ shift $((OPTIND-1))
 # get program positional arguments
 case "$#" in
     0 )
-        [ "$ENABLE" -ne 0 ] && _enable && exit 0
+        [ "$ENABLE" -ne 0 ] && _enable "$TIMEOUT" && exit 0
         panic "Missing argument USERNAME"
         ;;
     1 ) 
         USERNAME=$1
-        [ $ENABLE -ne 0 ] && _enable
+        [ $ENABLE -ne 0 ] && _enable "$TIMEOUT"
 	[ $REMOVE -ne 0 ] && _remove "$USERNAME" && exit 0
         ;;
     2 ) 
         USERNAME=$1
         TOKEN=$2
-        [ $ENABLE -ne 0 ] && _enable
+        [ $ENABLE -ne 0 ] && _enable "$TIMEOUT"
         [ $REMOVE -ne 0 ] && panic "Cannot add and remove token at the same time"
         ;;
     * )
@@ -124,10 +149,6 @@ esac
 # get token from stdin if the token is, e.g. piped in
 [ -p /dev/stdin ] && read -r TOKEN
 
-# check deps
-[ ! "$(command -v gpg)" ] && panic 'Missing dependency "gnupg"'
-[ ! "$(command -v at)" ] && panic 'Missing dependency "at"'
-
 # Retrieve password
 stty -echo
 printf "Password: "
@@ -135,19 +156,20 @@ read -r PASSWD
 stty echo
 printf "\n"
 
-if [ -n "$TOKEN" ]; then
-    # encrypt
-    [ ! -d "$DATA_DIR" ] && mkdir -p "$DATA_DIR"
-    [ $FORCE -eq 0 ] && [ -f "$DATA_DIR/$USERNAME" ] && panic "This name already exists"
-    echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$DATA_DIR/$USERNAME" -c
-elif [ -f "$DATA_DIR/$USERNAME" ]; then
-    # decrypt
-    SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$DATA_DIR/$USERNAME" 2> /dev/null)
-    echo "https://$USERNAME:$SECRET@$DOMAIN" > "$GIT_CRED"
-    echo "[ -f '$GIT_CRED' ] && rm '$GIT_CRED'" | at now +10 minutes 2> /dev/null
-    echo "Token \"$SECRET\" written to clipboard and saved to git-credentials for 10 min."
-else
-    panic "File $DATA_DIR/$USERNAME does not exist"
-fi
+if [ -n "$TOKEN" ]
+then # encrypt
 
+    [ ! -d "$DATA_DIR" ] && mkdir -p "$DATA_DIR" || panic $? "Could not find or create \"$DATA_DIR\""
+    [ $FORCE -eq 0 ] && [ -f "$DATA_DIR/$USERNAME" ] && panic "This name already exists"
+    echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$DATA_DIR/$USERNAME" -c || panic $? "Encryption failed"
+
+elif [ -f "$DATA_DIR/$USERNAME" ]
+then # decrypt
+
+    SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$DATA_DIR/$USERNAME" 2> /dev/null || panic $? "Decryption failed")
+    _approve "$URL" "$USERNAME" "$SECRET" || panic $? "Approval failed"
+    echo "Token \"$SECRET\" written to clipboard and cached in git-credential for a limited time."
+
+else panic "File $DATA_DIR/$USERNAME does not exist"
+fi
 
