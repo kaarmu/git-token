@@ -9,7 +9,7 @@ Manage git tokens with password encrypted files.
 
 This repo contains a submodule, clone and install by:
 ```
-git clone --recurse-submodules https://github.com/kaarmu/git-token
+git clone https://github.com/kaarmu/git-token
 cd git-token
 make install
 ```
