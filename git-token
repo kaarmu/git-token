@@ -159,14 +159,14 @@ printf "\n"
 if [ -n "$TOKEN" ]
 then # encrypt
 
-    [ ! -d "$DATA_DIR" ] && mkdir -p "$DATA_DIR" || panic $? "Could not find or create \"$DATA_DIR\""
+    [ ! -d "$DATA_DIR" ] && mkdir -p "$DATA_DIR"
     [ $FORCE -eq 0 ] && [ -f "$DATA_DIR/$USERNAME" ] && panic "This name already exists"
     echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$DATA_DIR/$USERNAME" -c || panic $? "Encryption failed"
 
 elif [ -f "$DATA_DIR/$USERNAME" ]
 then # decrypt
 
-    SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$DATA_DIR/$USERNAME" 2> /dev/null || panic $? "Decryption failed")
+    SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$DATA_DIR/$USERNAME" 2> /dev/null)
     _approve "$URL" "$USERNAME" "$SECRET" || panic $? "Approval failed"
     echo "Token \"$SECRET\" written to clipboard and cached in git-credential for a limited time."
 
