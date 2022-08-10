@@ -28,13 +28,23 @@ Manage git tokens with password protected files.
 
 OPTIONS
     -h, --help          Show this help message.
-    -e, --enable        Enable git credential-cache in the local repository.
+    -e, --enable        Enable git credential-cache in globally.
     -t SEC              Set git credential-cache timeout to SECONDS, only used
-	--timeout=SEC     with -e option (default "900").
+        --timeout=SEC     with -e option (default "900").
     -r, --remove        Remove token with name USERNAME.
     -u URL              Set the git domain url, must be used with password
-	--url=URL         decryption (default "github.com").
+        --url=URL         decryption (default "github.com").
     -f, --force         Write over any existing token.
+
+STATE
+    > git config user.name
+    --> $(git config user.name)
+
+    > git config user.email
+    --> $(git config user.email)
+
+    > git config credential.helper
+    --> $(git config credential.helper)
 
 To save a token: git-token adam xxyyzz
 The program will encrypt with gnupg a file named "adam"
@@ -45,6 +55,14 @@ The program will try to decrypt the file
 ~/.local/share/git-token/adam, print the contents, and call
 git credential to save the login credentials for a limited time.
 EOF
+}
+
+# Return the argument at index
+# > index [-]NUM [ARGS...]
+index() {
+    [ $# -lt 2 ] && return 1
+    [ $1 -gt 0 ] && i=$1 || i=$(($# + $1))
+    [ $i -le 0 ] && echo "" || ( shift $i && echo "$1" )
 }
 
 # Print error and exit
@@ -111,14 +129,14 @@ while getopts ":herfd:-:" OPT; do
     case $OPT in
         h | help ) help ; exit 0 ;;
         e | enable) ENABLE=1 ;;
-	t | timeout) TIMEOUT="$OPTARG" ;;
+        t | timeout) TIMEOUT="$OPTARG" ;;
         r | remove) REMOVE=1 ;;
-	u | url) 
-	    URL="$OPTARG" 
-	    [ -z "$URL" ] && panic "Missing argument to \"$OPT\"" 
-	    ;;
-	f | force) FORCE=1 ;;
-	: ) panic "Missing argument to \"$OPTARG\"" ;;
+        u | url)
+            URL="$OPTARG"
+            [ -z "$URL" ] && panic "Missing argument to \"$OPT\""
+            ;;
+        f | force) FORCE=1 ;;
+        : ) panic "Missing argument to \"$OPTARG\"" ;;
         * ) panic "Unrecognized option \"$OPTARG\"" ;;
     esac
 done
@@ -130,16 +148,16 @@ case "$#" in
         [ "$ENABLE" -ne 0 ] && _enable "$TIMEOUT" && exit 0
         panic "Missing argument USERNAME"
         ;;
-    1 ) 
+    1 )
         USERNAME=$1
         [ $ENABLE -ne 0 ] && _enable "$TIMEOUT"
-	[ $REMOVE -ne 0 ] && _remove "$USERNAME" && exit 0
+        [ $REMOVE -ne 0 ] && _remove "$USERNAME" && exit 0
         ;;
-    2 ) 
+    2 )
         USERNAME=$1
         TOKEN=$2
         [ $ENABLE -ne 0 ] && _enable "$TIMEOUT"
-        [ $REMOVE -ne 0 ] && panic "Cannot add and remove token at the same time"
+        [ $REMOVE -ne 0 ] && echo "Replacing token for \"$USERNAME\"" && _remove "$USERNAME"
         ;;
     * )
         panic "Too many arguments"
@@ -168,8 +186,18 @@ then # decrypt
 
     SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$DATA_DIR/$USERNAME" 2> /dev/null)
     _approve "$URL" "$USERNAME" "$SECRET" || panic $? "Approval failed"
-    echo "Token \"$SECRET\" written to clipboard and cached in git-credential for a limited time."
 
-else panic "File $DATA_DIR/$USERNAME does not exist"
+    if [ "$(index 1 $(git config credential.helper))" = "cache" ]
+    then
+        echo "Found token \"$SECRET\" and cached it for a limited time."
+    else
+        echo "Token \"$SECRET\" found."
+        echo ""
+        echo "WARNING: git credential-cache is disabled, you will have to enter the token"
+        echo "manually. Enable git credential-cache globally with"
+        echo "> git token -e"
+    fi
+
+else panic "Cannot find file \"$DATA_DIR/$USERNAME\" containing the requested token."
 fi
 
