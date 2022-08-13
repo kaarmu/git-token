@@ -7,8 +7,9 @@
 install:
 	# Install any potential tokens
 	mkdir -p ${HOME}/.local/share/git-token
-	[ -d tokens ] && install tokens/* "${HOME}/.local/share/git-token/"
+	[ -d tokens ] && cp -r tokens/* "${HOME}/.local/share/git-token"
 	# Install the git-token script
+	mkdir -p ${HOME}/.local/bin
 	install -m=775 ./git-token ${HOME}/.local/bin/git-token
 
 uninstall:

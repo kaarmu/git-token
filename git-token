@@ -18,7 +18,7 @@ DATA_DIR="$HOME/.local/share/git-token"
 
 
 usage() {
-    echo 'Usage: git-token [OPTIONS] USERNAME [TOKEN]'
+    echo 'Usage: git-token [OPTIONS] USERNAME [TOKEN] [NAME EMAIL]'
 }
 
 help() {
@@ -118,6 +118,8 @@ TIMEOUT=900
 URL="https://github.com"
 USERNAME=""
 TOKEN=""
+NAME=""
+EMAIL=""
 
 # parse program arguments
 while getopts ":herfd:-:" OPT; do
@@ -159,6 +161,17 @@ case "$#" in
         [ $ENABLE -ne 0 ] && _enable "$TIMEOUT"
         [ $REMOVE -ne 0 ] && echo "Replacing token for \"$USERNAME\"" && _remove "$USERNAME"
         ;;
+    3 )
+        panic "If NAME is given, so must EMAIL"
+        ;;
+    4 )
+        USERNAME=$1
+        TOKEN=$2
+	NAME=$3
+	EMAIL=$4
+        [ $ENABLE -ne 0 ] && _enable "$TIMEOUT"
+        [ $REMOVE -ne 0 ] && echo "Replacing token for \"$USERNAME\"" && _remove "$USERNAME"
+        ;;
     * )
         panic "Too many arguments"
         ;;
@@ -177,15 +190,20 @@ printf "\n"
 if [ -n "$TOKEN" ]
 then # encrypt
 
-    [ ! -d "$DATA_DIR" ] && mkdir -p "$DATA_DIR"
-    [ $FORCE -eq 0 ] && [ -f "$DATA_DIR/$USERNAME" ] && panic "This name already exists"
-    echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$DATA_DIR/$USERNAME" -c || panic $? "Encryption failed"
+    [ ! -d "$DATA_DIR/$USERNAME" ] && mkdir -p "$DATA_DIR/$USERNAME"
+    [ $FORCE -eq 0 ] && [ -d "$DATA_DIR/$USERNAME" ] && panic "This user already exists"
+    echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$DATA_DIR/$USERNAME/token" -c || panic $? "Encryption failed"
+    [ -n "$NAME" ] && echo "$NAME" > "$DATA_DIR/$USERNAME/name"
+    [ -n "$EMAIL" ] && echo "$EMAIL" > "$DATA_DIR/$USERNAME/email"
 
-elif [ -f "$DATA_DIR/$USERNAME" ]
+elif [ -d "$DATA_DIR/$USERNAME" ]
 then # decrypt
 
-    SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$DATA_DIR/$USERNAME" 2> /dev/null)
+    SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$DATA_DIR/$USERNAME/token" 2> /dev/null)
     _approve "$URL" "$USERNAME" "$SECRET" || panic $? "Approval failed"
+
+    [ -f "$DATA_DIR/$USERNAME/name" ] && git config --global user.name "$NAME"
+    [ -f "$DATA_DIR/$USERNAME/email" ] && git config --global user.email "$NAME"
 
     if [ "$(index 1 $(git config credential.helper))" = "cache" ]
     then
@@ -198,6 +216,6 @@ then # decrypt
         echo "> git token -e"
     fi
 
-else panic "Cannot find file \"$DATA_DIR/$USERNAME\" containing the requested token."
+else panic "Cannot find \"$DATA_DIR/$USERNAME\" containing the requested token."
 fi
 
