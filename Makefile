@@ -17,3 +17,7 @@ uninstall:
 	rm -r "${HOME}/.local/share/git-token"
 	# Remove script
 	rm "${HOME}/.local/bin/git-token"
+
+load:
+	# Get tokens from system and put in this repository
+	cp -rf "${HOME}/.local/share/git-token/* tokens" 
