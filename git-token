@@ -202,8 +202,8 @@ then # decrypt
     SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$DATA_DIR/$USERNAME/token" 2> /dev/null)
     _approve "$URL" "$USERNAME" "$SECRET" || panic $? "Approval failed"
 
-    [ -f "$DATA_DIR/$USERNAME/name" ] && git config --global user.name "$NAME"
-    [ -f "$DATA_DIR/$USERNAME/email" ] && git config --global user.email "$NAME"
+    [ -f "$DATA_DIR/$USERNAME/name" ] && git config --global user.name "$(cat "$DATA_DIR/$USERNAME/name")"
+    [ -f "$DATA_DIR/$USERNAME/email" ] && git config --global user.email "$(cat "$DATA_DIR/$USERNAME/email")"
 
     if [ "$(index 1 $(git config credential.helper))" = "cache" ]
     then
