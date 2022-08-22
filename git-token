@@ -18,7 +18,7 @@ DATA_DIR="$HOME/.local/share/git-token"
 
 
 usage() {
-    echo 'Usage: git-token [OPTIONS] USERNAME [TOKEN] [NAME EMAIL]'
+    echo 'Usage: git-token [OPTIONS] USERNAME [TOKEN]'
 }
 
 help() {
@@ -35,25 +35,19 @@ OPTIONS
     -u URL              Set the git domain url, must be used with password
         --url=URL         decryption (default "github.com").
     -f, --force         Write over any existing token.
-
-STATE
-    > git config user.name
-    --> $(git config user.name)
-
-    > git config user.email
-    --> $(git config user.email)
-
-    > git config credential.helper
-    --> $(git config credential.helper)
+        --only-token    Do not save or automatically set name/email, only used
+                          when saving a new token.
 
 To save a token: git-token adam xxyyzz
-The program will encrypt with gnupg a file named "adam"
-containing "xxyyzz" to the directory ~/.local/share/git-token.
+The program will encrypt with gnupg a file named "adam" containing "xxyyzz" to
+the directory ~/.local/share/git-token. By supplying name and email the user
+can rest assured it is he/she that is the author as git-token will automatically
+set update git-config with name and email during token retrieval.
 
 To load a token: git-token adam
-The program will try to decrypt the file
-~/.local/share/git-token/adam, print the contents, and call
-git credential to save the login credentials for a limited time.
+The program will try to decrypt the file ~/.local/share/git-token/adam, print
+the contents, and call git credential to save the login credentials for a
+limited time.
 EOF
 }
 
@@ -74,12 +68,30 @@ panic() {
     exit $CODE
 }
 
-# Assert there exist commands 
+# Assert there exist commands
 # > assert_command [COMMANDS...]
 assert_command() {
     for cmd in "$@"; do
         [ ! "$(command -v "$cmd")" ] && panic "Missing command \"$cmd\". Is it installed?"
     done
+}
+
+# Prompt user of something
+# > prompt VAR MESSAGE
+prompt() {
+    VAR="$1"
+    shift
+    printf "$*"
+    read -r "$VAR"
+}
+
+# Prompt user of something that shouldn't be echoed
+# > prompt_secret VAR MESSAGE
+prompt_secret() {
+    stty -echo
+    prompt "$@"
+    stty echo
+    printf "\n"
 }
 
 # Enable git credentials
@@ -89,7 +101,7 @@ _enable() {
 
 # Remove user token
 _remove() {
-    rm "$DATA_DIR/$1" || exit $?
+    rm -r "$DATA_DIR/$1" || exit $?
 }
 
 # Approve git credential with _approve URL USERNAME PASSWORD
@@ -100,6 +112,10 @@ username=$2
 password=$3
 EOF
 return $?
+}
+
+_get_last_author() {
+    git log -1 --pretty=format:'%an <%ae>'
 }
 
 
@@ -116,6 +132,7 @@ ENABLE=0
 FORCE=0
 TIMEOUT=900
 URL="https://github.com"
+ONLY_TOKEN=0
 USERNAME=""
 TOKEN=""
 NAME=""
@@ -138,6 +155,7 @@ while getopts ":herfd:-:" OPT; do
             [ -z "$URL" ] && panic "Missing argument to \"$OPT\""
             ;;
         f | force) FORCE=1 ;;
+        only-token ) ONLY_TOKEN=1 ;;
         : ) panic "Missing argument to \"$OPTARG\"" ;;
         * ) panic "Unrecognized option \"$OPTARG\"" ;;
     esac
@@ -161,17 +179,6 @@ case "$#" in
         [ $ENABLE -ne 0 ] && _enable "$TIMEOUT"
         [ $REMOVE -ne 0 ] && echo "Replacing token for \"$USERNAME\"" && _remove "$USERNAME"
         ;;
-    3 )
-        panic "If NAME is given, so must EMAIL"
-        ;;
-    4 )
-        USERNAME=$1
-        TOKEN=$2
-	NAME=$3
-	EMAIL=$4
-        [ $ENABLE -ne 0 ] && _enable "$TIMEOUT"
-        [ $REMOVE -ne 0 ] && echo "Replacing token for \"$USERNAME\"" && _remove "$USERNAME"
-        ;;
     * )
         panic "Too many arguments"
         ;;
@@ -180,39 +187,63 @@ esac
 # get token from stdin if the token is, e.g. piped in
 [ -p /dev/stdin ] && read -r TOKEN
 
-# Retrieve password
-stty -echo
-printf "Password: "
-read -r PASSWD
-stty echo
-printf "\n"
-
 if [ -n "$TOKEN" ]
 then # encrypt
 
-    [ ! -d "$DATA_DIR/$USERNAME" ] && mkdir -p "$DATA_DIR/$USERNAME"
-    [ $FORCE -eq 0 ] && [ -d "$DATA_DIR/$USERNAME" ] && panic "This user already exists"
-    echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$DATA_DIR/$USERNAME/token" -c || panic $? "Encryption failed"
+    if [ -d "$DATA_DIR/$USERNAME" ]
+    then [ $FORCE -eq 0 ] && panic "This user already exists"
+    else mkdir -p "$DATA_DIR/$USERNAME"
+    fi
+
+    if [ "$ONLY_TOKEN" -eq 0 ]
+    then
+        prompt NAME "Name (optional): "
+        prompt EMAIL "Email (optional): "
+    fi
+
+    prompt_secret PASSWD "Password: "
+
     [ -n "$NAME" ] && echo "$NAME" > "$DATA_DIR/$USERNAME/name"
     [ -n "$EMAIL" ] && echo "$EMAIL" > "$DATA_DIR/$USERNAME/email"
+    echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$DATA_DIR/$USERNAME/token" -c || panic $? "Encryption failed"
 
 elif [ -d "$DATA_DIR/$USERNAME" ]
 then # decrypt
 
+    if [ "$ONLY_TOKEN" -eq 0 ]
+    then
+        [ -f "$DATA_DIR/$USERNAME/name" ] && NAME="$(cat "$DATA_DIR/$USERNAME/name")" && git config --global user.name "$NAME"
+        [ -f "$DATA_DIR/$USERNAME/email" ] && EMAIL="$(cat "$DATA_DIR/$USERNAME/email")" && git config --global user.email "$EMAIL"
+    fi
+
+    prompt_secret PASSWD "Password: "
+
     SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$DATA_DIR/$USERNAME/token" 2> /dev/null)
+    [ -z "$SECRET" ] && panic "Password was incorrect"
     _approve "$URL" "$USERNAME" "$SECRET" || panic $? "Approval failed"
 
-    [ -f "$DATA_DIR/$USERNAME/name" ] && git config --global user.name "$(cat "$DATA_DIR/$USERNAME/name")"
-    [ -f "$DATA_DIR/$USERNAME/email" ] && git config --global user.email "$(cat "$DATA_DIR/$USERNAME/email")"
+    CRED_HELPER="$(index 1 $(git config credential.helper))"
 
-    if [ "$(index 1 $(git config credential.helper))" = "cache" ]
+    if [ "$CRED_HELPER" = "cache" ]
+    then echo "Found token \"$SECRET\" and cached it for a limited time."
+    else echo "Found token \"$SECRET\"."
+    fi
+
+    # Warnings:
+
+    if [ "$ONLY_TOKEN" -eq 0 ] && [ _get_last_author != "$NAME <$EMAIL>" ]
     then
-        echo "Found token \"$SECRET\" and cached it for a limited time."
-    else
-        echo "Token \"$SECRET\" found."
+        echo ""
+        echo "WARNING: The last commit seems to have been made by someone other than you."
+        echo "Is this correct?"
+    fi
+
+    if [ "$CRED_HELPER" != "cache" ]
+    then
         echo ""
         echo "WARNING: git credential-cache is disabled, you will have to enter the token"
-        echo "manually. Enable git credential-cache globally with"
+        echo "manually or run git-token again after enabling. Enable git credential-cache"
+        echo "globally with"
         echo "> git token -e"
     fi
 
