@@ -231,11 +231,12 @@ then # decrypt
 
     # Warnings:
 
-    if [ "$ONLY_TOKEN" -eq 0 ] && [ _get_last_author != "$NAME <$EMAIL>" ]
+    if [ "$ONLY_TOKEN" -eq 0 ] && [ "$(_get_last_author)" != "$NAME <$EMAIL>" ]
     then
         echo ""
         echo "WARNING: The last commit seems to have been made by someone other than you."
-        echo "Is this correct?"
+        echo "Is this correct? The commit was done by"
+        echo "  $(_get_last_author)"
     fi
 
     if [ "$CRED_HELPER" != "cache" ]
