@@ -68,6 +68,17 @@ panic() {
     exit $CODE
 }
 
+# Climb directories to find an existing path CHILD
+# > climb CHILD [ PARENT ]
+climb() {
+    CHILD="$1"
+    PARENT="$(realpath "${2:-$PWD}")"
+    [ -e "$PARENT/$CHILD" ] && echo "$PARENT" && return 0
+    [ "$PARENT" = "/" ] && return 1
+    climb "$CHILD" "$PARENT/.."
+    return $?
+}
+
 # Assert there exist commands
 # > assert_command [COMMANDS...]
 assert_command() {
@@ -231,7 +242,7 @@ then # decrypt
 
     # Warnings:
 
-    if [ "$ONLY_TOKEN" -eq 0 ] && [ "$(_get_last_author)" != "$NAME <$EMAIL>" ]
+    if climb .git && [ "$ONLY_TOKEN" -eq 0 ] && [ "$(_get_last_author)" != "$NAME <$EMAIL>" ]
     then
         echo ""
         echo "WARNING: The last commit seems to have been made by someone other than you."
