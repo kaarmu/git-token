@@ -18,6 +18,8 @@ uninstall:
 	# Remove script
 	rm "${HOME}/.local/bin/git-token"
 
+reinstall: uninstall install
+
 load:
 	# Get tokens from system and put in this repository
-	cp -rf "${HOME}/.local/share/git-token/* tokens" 
+	cp -rf "${HOME}/.local/share/git-token/* tokens"
