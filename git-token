@@ -29,14 +29,12 @@ Manage git tokens with password protected files.
 OPTIONS
     -h, --help          Show this help message.
     -e, --enable        Enable git credential-cache in globally.
-    -t SEC              Set git credential-cache timeout to SECONDS, only used
-        --timeout=SEC     with -e option (default "900").
-    -r, --remove        Remove token with name USERNAME.
-    -u URL              Set the git domain url, must be used with password
-        --url=URL         decryption (default "github.com").
+    -t SEC              Set git credential-cache timeout to SECONDS (default "900").
+        --timeout=SEC     Can only be used with -e option.
+    -r, --remove        Remove token.
     -f, --force         Write over any existing token.
-        --only-token    Do not save or automatically set name/email, only used
-                          when saving a new token.
+        --only-token    Do not save or automatically set name/email.
+        --recommit      Redo the last commit but using the current author.
 
 To save a token: git-token adam xxyyzz
 The program will encrypt with gnupg a file named "adam" containing "xxyyzz" to
@@ -129,6 +127,10 @@ _get_last_author() {
     git log -1 --pretty=format:'%an <%ae>'
 }
 
+_recommit() {
+    git commit --amend -C HEAD --reset-author
+}
+
 
 ############
 ## SCRIPT ##
@@ -142,15 +144,16 @@ REMOVE=0
 ENABLE=0
 FORCE=0
 TIMEOUT=900
-URL="https://github.com"
 ONLY_TOKEN=0
+RECOMMIT=0
 USERNAME=""
 TOKEN=""
 NAME=""
 EMAIL=""
+DOMAIN="https://github.com"
 
 # parse program arguments
-while getopts ":herfd:-:" OPT; do
+while getopts ":het:rf-:" OPT; do
     if [ "$OPT" = "-" ]; then
         OPT="${OPTARG%%=*}"
         OPTARG="${OPTARG#$OPT}"
@@ -161,12 +164,9 @@ while getopts ":herfd:-:" OPT; do
         e | enable) ENABLE=1 ;;
         t | timeout) TIMEOUT="$OPTARG" ;;
         r | remove) REMOVE=1 ;;
-        u | url)
-            URL="$OPTARG"
-            [ -z "$URL" ] && panic "Missing argument to \"$OPT\""
-            ;;
         f | force) FORCE=1 ;;
         only-token ) ONLY_TOKEN=1 ;;
+        recommit ) RECOMMIT=1 ;;
         : ) panic "Missing argument to \"$OPTARG\"" ;;
         * ) panic "Unrecognized option \"$OPTARG\"" ;;
     esac
@@ -210,12 +210,14 @@ then # encrypt
     then
         prompt NAME "Name (optional): "
         prompt EMAIL "Email (optional): "
+        prompt DOMAIN "Domain ($DOMAIN): "
     fi
 
     prompt_secret PASSWD "Password: "
 
     [ -n "$NAME" ] && echo "$NAME" > "$DATA_DIR/$USERNAME/name"
     [ -n "$EMAIL" ] && echo "$EMAIL" > "$DATA_DIR/$USERNAME/email"
+    [ -n "$DOMAIN" ] && echo "$DOMAIN" > "$DATA_DIR/$USERNAME/domain"
     echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$DATA_DIR/$USERNAME/token" -c || panic $? "Encryption failed"
 
 elif [ -d "$DATA_DIR/$USERNAME" ]
@@ -225,19 +227,24 @@ then # decrypt
     then
         [ -f "$DATA_DIR/$USERNAME/name" ] && NAME="$(cat "$DATA_DIR/$USERNAME/name")" && git config --global user.name "$NAME"
         [ -f "$DATA_DIR/$USERNAME/email" ] && EMAIL="$(cat "$DATA_DIR/$USERNAME/email")" && git config --global user.email "$EMAIL"
+        [ -f "$DATA_DIR/$USERNAME/domain" ] && DOMAIN="$(cat "$DATA_DIR/$USERNAME/domain")"
     fi
 
     prompt_secret PASSWD "Password: "
 
     SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$DATA_DIR/$USERNAME/token" 2> /dev/null)
     [ -z "$SECRET" ] && panic "Password was incorrect"
-    _approve "$URL" "$USERNAME" "$SECRET" || panic $? "Approval failed"
+    _approve "$DOMAIN" "$USERNAME" "$SECRET" || panic $? "Approval failed"
 
     CRED_HELPER="$(index 1 $(git config credential.helper))"
 
     if [ "$CRED_HELPER" = "cache" ]
     then echo "Found token \"$SECRET\" and cached it for a limited time."
     else echo "Found token \"$SECRET\"."
+    fi
+
+    if [ "$RECOMMIT" -eq 1 ]
+    then _recommit
     fi
 
     # Warnings:
