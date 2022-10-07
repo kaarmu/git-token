@@ -28,24 +28,44 @@ Manage git tokens with password protected files.
 
 OPTIONS
     -h, --help          Show this help message.
-    -e, --enable        Enable git credential-cache in globally.
-    -t SEC              Set git credential-cache timeout to SECONDS (default "900").
-        --timeout=SEC     Can only be used with -e option.
+
+    -e, --enable        Enable git credential-cache in
+                        globally.
+
     -r, --remove        Remove token.
+
     -f, --force         Write over any existing token.
-        --only-token    Do not save or automatically set name/email.
-        --recommit      Redo the last commit but using the current author.
 
-To save a token: git-token adam xxyyzz
-The program will encrypt with gnupg a file named "adam" containing "xxyyzz" to
-the directory ~/.local/share/git-token. By supplying name and email the user
-can rest assured it is he/she that is the author as git-token will automatically
-set update git-config with name and email during token retrieval.
+    -t SEC              Set git credential-cache timeout to
+        --timeout=SEC   SECONDS (default "900"). Can only
+                        be used with -e option.
 
-To load a token: git-token adam
-The program will try to decrypt the file ~/.local/share/git-token/adam, print
-the contents, and call git credential to save the login credentials for a
-limited time.
+    -d DOMAIN           Create or use a specific domain
+        --domain=DOMAIN (default "https://github.com").
+
+        --only-token    Do not save or automatically set
+                        name/email.
+
+        --recommit      Redo the last commit but using the
+                        current author.
+
+Saving a token
+    The program will encrypt with gnupg a file named "adam"
+    containing "xxyyzz" to the directory
+    ~/.local/share/git-token. By supplying name and email
+    the user can rest assured it is he/she that is the
+    author as git-token will automatically set update
+    git-config with name and email during token retrieval.
+
+    > git-token adam xxyyzz
+
+Loading a token
+    The program will try to decrypt the file
+    ~/.local/share/git-token/adam, print the contents, and
+    call git credential to save the login credentials for a
+    limited time.
+
+    > git-token adam
 EOF
 }
 
@@ -53,16 +73,16 @@ EOF
 # > index [-]NUM [ARGS...]
 index() {
     [ $# -lt 2 ] && return 1
-    [ $1 -gt 0 ] && i=$1 || i=$(($# + $1))
-    [ $i -le 0 ] && echo "" || ( shift $i && echo "$1" )
+    [ "$1" -gt 0 ] && i=$1 || i=$(($# + $1))
+    [ "$i" -le 0 ] && echo "" || ( shift $i && echo "$1" )
 }
 
 # Print error and exit
 # > panic [CODE] MESSAGE
 panic() {
+    usage
     [ $# -gt 1 ] && CODE=$1 && shift || CODE=1
     echo "Error ($CODE): $1"
-    usage
     exit $CODE
 }
 
@@ -91,7 +111,7 @@ prompt() {
     VAR="$1"
     shift
     printf "$*"
-    read -r "$VAR"
+    read -r "${VAR?}"
 }
 
 # Prompt user of something that shouldn't be echoed
@@ -110,7 +130,7 @@ _enable() {
 
 # Remove user token
 _remove() {
-    rm -r "$DATA_DIR/$1" || exit $?
+    rm -r "$DATA_DIR/${1:?}" || exit $?
 }
 
 # Approve git credential with _approve URL USERNAME PASSWORD
@@ -150,21 +170,22 @@ USERNAME=""
 TOKEN=""
 NAME=""
 EMAIL=""
-DOMAIN="https://github.com"
+DOMAIN="github.com"
 
 # parse program arguments
-while getopts ":het:rf-:" OPT; do
+while getopts ":herft:d:-:" OPT; do
     if [ "$OPT" = "-" ]; then
         OPT="${OPTARG%%=*}"
-        OPTARG="${OPTARG#$OPT}"
+        OPTARG="${OPTARG#"$OPT"}"
         OPTARG="${OPTARG#=}"
     fi
     case $OPT in
         h | help ) help ; exit 0 ;;
-        e | enable) ENABLE=1 ;;
-        t | timeout) TIMEOUT="$OPTARG" ;;
-        r | remove) REMOVE=1 ;;
-        f | force) FORCE=1 ;;
+        e | enable ) ENABLE=1 ;;
+        r | remove ) REMOVE=1 ;;
+        f | force ) FORCE=1 ;;
+        t | timeout ) TIMEOUT="$OPTARG" ;;
+        d | domain ) DOMAIN="$OPTARG" ;;
         only-token ) ONLY_TOKEN=1 ;;
         recommit ) RECOMMIT=1 ;;
         : ) panic "Missing argument to \"$OPTARG\"" ;;
@@ -198,45 +219,59 @@ esac
 # get token from stdin if the token is, e.g. piped in
 [ -p /dev/stdin ] && read -r TOKEN
 
+USER_DIR="$DATA_DIR/$DOMAIN/$USERNAME"
+
 if [ -n "$TOKEN" ]
 then # encrypt
 
-    if [ -d "$DATA_DIR/$USERNAME" ]
+    if [ -d "$USER_DIR" ]
     then [ $FORCE -eq 0 ] && panic "This user already exists"
-    else mkdir -p "$DATA_DIR/$USERNAME"
+    else mkdir -p "$USER_DIR"
     fi
 
     if [ "$ONLY_TOKEN" -eq 0 ]
     then
         prompt NAME "Name (optional): "
         prompt EMAIL "Email (optional): "
-        prompt DOMAIN "Domain ($DOMAIN): "
     fi
 
     prompt_secret PASSWD "Password: "
 
-    [ -n "$NAME" ] && echo "$NAME" > "$DATA_DIR/$USERNAME/name"
-    [ -n "$EMAIL" ] && echo "$EMAIL" > "$DATA_DIR/$USERNAME/email"
-    [ -n "$DOMAIN" ] && echo "$DOMAIN" > "$DATA_DIR/$USERNAME/domain"
-    echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$DATA_DIR/$USERNAME/token" -c || panic $? "Encryption failed"
+    [ -n "$NAME" ] && echo "$NAME" > "$USER_DIR/name"
+    [ -n "$EMAIL" ] && echo "$EMAIL" > "$USER_DIR/email"
+    echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$USER_DIR/token" -c || panic $? "Encryption failed"
 
-elif [ -d "$DATA_DIR/$USERNAME" ]
-then # decrypt
+else # decrypt
+
+    if [ ! -d "$USER_DIR" ]
+    then
+        NUM_CANDIDATES=$(find "$DATA_DIR" -name "$USERNAME" | wc -l)
+        if [ "$NUM_CANDIDATES" -eq 0 ]
+        then panic "Cannot find \"$USER_DIR\" containing the requested token."
+        elif [ "$NUM_CANDIDATES" -eq 1 ]
+        then
+            USER_DIR="$(find "$DATA_DIR" -name "$USERNAME")"
+            DOMAIN="$(basename "$(dirname "$USER_DIR")")"
+            echo "Using domain \"$DOMAIN\"".
+        else
+            # TODO: Make this smart by suggesting domain
+            panic "Cannot find \"$USERNAME\" under \"$DOMAIN\", however there are many \"$USERNAME\" in other domains. Please specify domain."
+        fi
+    fi
 
     if [ "$ONLY_TOKEN" -eq 0 ]
     then
-        [ -f "$DATA_DIR/$USERNAME/name" ] && NAME="$(cat "$DATA_DIR/$USERNAME/name")" && git config --global user.name "$NAME"
-        [ -f "$DATA_DIR/$USERNAME/email" ] && EMAIL="$(cat "$DATA_DIR/$USERNAME/email")" && git config --global user.email "$EMAIL"
-        [ -f "$DATA_DIR/$USERNAME/domain" ] && DOMAIN="$(cat "$DATA_DIR/$USERNAME/domain")"
+        [ -f "$USER_DIR/name" ] && NAME="$(cat "$USER_DIR/name")" && git config --global user.name "$NAME"
+        [ -f "$USER_DIR/email" ] && EMAIL="$(cat "$USER_DIR/email")" && git config --global user.email "$EMAIL"
     fi
 
     prompt_secret PASSWD "Password: "
 
-    SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$DATA_DIR/$USERNAME/token" 2> /dev/null)
+    SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$USER_DIR/token" 2> /dev/null)
     [ -z "$SECRET" ] && panic "Password was incorrect"
-    _approve "$DOMAIN" "$USERNAME" "$SECRET" || panic $? "Approval failed"
+    _approve "https://$DOMAIN" "$USERNAME" "$SECRET" || panic $? "Approval failed"
 
-    CRED_HELPER="$(index 1 $(git config credential.helper))"
+    CRED_HELPER="$(index 1 "$(git config credential.helper)")"
 
     if [ "$CRED_HELPER" = "cache" ]
     then echo "Found token \"$SECRET\" and cached it for a limited time."
@@ -266,6 +301,4 @@ then # decrypt
         echo "> git token -e"
     fi
 
-else panic "Cannot find \"$DATA_DIR/$USERNAME\" containing the requested token."
 fi
-
