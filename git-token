@@ -271,7 +271,7 @@ else # decrypt
     [ -z "$SECRET" ] && panic "Password was incorrect"
     _approve "https://$DOMAIN" "$USERNAME" "$SECRET" || panic $? "Approval failed"
 
-    CRED_HELPER="$(index 1 "$(git config credential.helper)")"
+    CRED_HELPER="$(index 1 $(git config credential.helper))"
 
     if [ "$CRED_HELPER" = "cache" ]
     then echo "Found token \"$SECRET\" and cached it for a limited time."
@@ -294,7 +294,7 @@ else # decrypt
 
     if [ "$CRED_HELPER" != "cache" ]
     then
-        echo ""
+        echo "$CRED_HELPER"
         echo "WARNING: git credential-cache is disabled, you will have to enter the token"
         echo "manually or run git-token again after enabling. Enable git credential-cache"
         echo "globally with"
