@@ -40,11 +40,7 @@ OPTIONS
         --timeout=SEC   SECONDS (default "900"). Can only
                         be used with -e option.
 
-    -d DOMAIN           Create or use a specific domain
-        --domain=DOMAIN (default "https://github.com").
-
-        --only-token    Do not save or automatically set
-                        name/email.
+        --only-token    Do not automatically set name/email.
 
         --recommit      Redo the last commit but using the
                         current author.
@@ -105,17 +101,31 @@ assert_command() {
     done
 }
 
+# Get value of variable by name
+# > lookup VAR
+lookup() {
+    eval "echo \$${1?}"
+}
+
+# Set value of variable by name
+# > assign VAR VALUE
+assign() {
+    eval "${1?}=${2?}"
+}
+
 # Prompt user of something
-# > prompt VAR MESSAGE
+# > prompt VAR DEFAULT MESSAGE...
 prompt() {
-    VAR="$1"
-    shift
+    VAR="${1?}"
+    VAL="$2"
+    shift 2
     printf "$*"
-    read -r "${VAR?}"
+    read -r "$VAR"
+    [ -z "$(lookup "$VAR")" ] && assign "$VAR" "$VAL"
 }
 
 # Prompt user of something that shouldn't be echoed
-# > prompt_secret VAR MESSAGE
+# > prompt_secret VAR DEFAULT MESSAGE
 prompt_secret() {
     stty -echo
     prompt "$@"
@@ -149,6 +159,16 @@ _get_last_author() {
 
 _recommit() {
     git commit --amend -C HEAD --reset-author
+}
+
+# Search for user of NAME
+# > _find_user NAME
+_find_user() {
+    case "$(find "$DATA_DIR" -name "$1" | wc -l)" in
+        0 ) echo ":" ;;
+        1 ) echo "$(find "$DATA_DIR" -name "$1")" ;;
+        * ) echo "@" ;;
+    esac
 }
 
 
@@ -185,7 +205,6 @@ while getopts ":herft:d:-:" OPT; do
         r | remove ) REMOVE=1 ;;
         f | force ) FORCE=1 ;;
         t | timeout ) TIMEOUT="$OPTARG" ;;
-        d | domain ) DOMAIN="$OPTARG" ;;
         only-token ) ONLY_TOKEN=1 ;;
         recommit ) RECOMMIT=1 ;;
         : ) panic "Missing argument to \"$OPTARG\"" ;;
@@ -219,53 +238,56 @@ esac
 # get token from stdin if the token is, e.g. piped in
 [ -p /dev/stdin ] && read -r TOKEN
 
-USER_DIR="$DATA_DIR/$DOMAIN/$USERNAME"
+USER_DIR="$(_find_user "$USERNAME")"
 
-if [ -n "$TOKEN" ]
-then # encrypt
+if [ -n "$TOKEN" ]; then
 
-    if [ -d "$USER_DIR" ]
-    then [ $FORCE -eq 0 ] && panic "This user already exists"
-    else mkdir -p "$USER_DIR"
+    ## encrypt ##
+
+    case "$USER_DIR" in
+        : ) ;;
+        * ) echo "WARNING: This username has been found under one or more domains." ;;
+    esac
+
+    prompt DOMAIN "$DOMAIN" "Domain ($DOMAIN): "
+    USER_DIR="$DATA_DIR/$DOMAIN/$USERNAME"
+
+    if [ ! -d "$USER_DIR" ]; then
+        mkdir -p "$USER_DIR"
+    else
+        [ $FORCE -eq 0 ] && panic "This user already exists."
     fi
 
-    if [ "$ONLY_TOKEN" -eq 0 ]
-    then
-        prompt NAME "Name (optional): "
-        prompt EMAIL "Email (optional): "
-    fi
+    prompt NAME '' "Name (optional): "
+    prompt EMAIL '' "Email (optional): "
 
-    prompt_secret PASSWD "Password: "
+    prompt_secret PASSWD '' "Password: "
 
     [ -n "$NAME" ] && echo "$NAME" > "$USER_DIR/name"
     [ -n "$EMAIL" ] && echo "$EMAIL" > "$USER_DIR/email"
     echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$USER_DIR/token" -c || panic $? "Encryption failed"
 
-else # decrypt
+else
 
-    if [ ! -d "$USER_DIR" ]
-    then
-        NUM_CANDIDATES=$(find "$DATA_DIR" -name "$USERNAME" | wc -l)
-        if [ "$NUM_CANDIDATES" -eq 0 ]
-        then panic "Cannot find \"$USER_DIR\" containing the requested token."
-        elif [ "$NUM_CANDIDATES" -eq 1 ]
-        then
-            USER_DIR="$(find "$DATA_DIR" -name "$USERNAME")"
-            DOMAIN="$(basename "$(dirname "$USER_DIR")")"
-            echo "Using domain \"$DOMAIN\"".
-        else
-            # TODO: Make this smart by suggesting domain
-            panic "Cannot find \"$USERNAME\" under \"$DOMAIN\", however there are many \"$USERNAME\" in other domains. Please specify domain."
-        fi
-    fi
+    ## decrypt ##
 
-    if [ "$ONLY_TOKEN" -eq 0 ]
-    then
+    case "$USER_DIR" in
+        : ) panic "Cannot find user \"$USERNAME\"." ;;
+        @ )
+            echo "Found multiple users with the name \"$USERNAME\", please specify domain."
+            prompt DOMAIN "$DOMAIN" "Domain ($DOMAIN): "
+            USER_DIR="$DATA_DIR/$DOMAIN/$USERNAME"
+            [ ! -d "$USER_DIR" ] && panic "The user does not exist under domain \"$DOMAIN\"."
+            ;;
+        * ) DOMAIN="$(basename "$(dirname "$USER_DIR")")" ;;
+    esac
+
+    if [ "$ONLY_TOKEN" -eq 0 ]; then
         [ -f "$USER_DIR/name" ] && NAME="$(cat "$USER_DIR/name")" && git config --global user.name "$NAME"
         [ -f "$USER_DIR/email" ] && EMAIL="$(cat "$USER_DIR/email")" && git config --global user.email "$EMAIL"
     fi
 
-    prompt_secret PASSWD "Password: "
+    prompt_secret PASSWD '' "Password: "
 
     SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$USER_DIR/token" 2> /dev/null)
     [ -z "$SECRET" ] && panic "Password was incorrect"
@@ -273,27 +295,27 @@ else # decrypt
 
     CRED_HELPER="$(index 1 $(git config credential.helper))"
 
-    if [ "$CRED_HELPER" = "cache" ]
-    then echo "Found token \"$SECRET\" and cached it for a limited time."
-    else echo "Found token \"$SECRET\"."
+    if [ "$CRED_HELPER" = "cache" ]; then
+        echo "Found token \"$SECRET\" and cached it for a limited time."
+    else
+        echo "Found token \"$SECRET\"."
     fi
 
-    if [ "$RECOMMIT" -eq 1 ]
-    then _recommit
+    if [ "$RECOMMIT" -eq 1 ]; then
+        _recommit
     fi
 
-    # Warnings:
+    # Warnings
 
-    if [ -n "$(climb .git)" ] && [ "$ONLY_TOKEN" -eq 0 ] && [ "$(_get_last_author)" != "$NAME <$EMAIL>" ]
-    then
+    if [ -n "$(climb .git)" ] && [ "$ONLY_TOKEN" -eq 0 ] && [ "$(_get_last_author)" != "$NAME <$EMAIL>" ]; then
         echo ""
         echo "WARNING: The last commit seems to have been made by someone other than you."
         echo "Is this correct? The commit was done by"
         echo "  $(_get_last_author)"
     fi
 
-    if [ "$CRED_HELPER" != "cache" ]
-    then
+    if [ "$CRED_HELPER" != "cache" ]; then
+        echo ""
         echo "$CRED_HELPER"
         echo "WARNING: git credential-cache is disabled, you will have to enter the token"
         echo "manually or run git-token again after enabling. Enable git credential-cache"
