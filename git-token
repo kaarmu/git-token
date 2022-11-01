@@ -46,22 +46,25 @@ OPTIONS
                         current author.
 
 Saving a token
-    The program will encrypt with gnupg a file named "adam"
-    containing "xxyyzz" to the directory
-    ~/.local/share/git-token. By supplying name and email
-    the user can rest assured it is he/she that is the
-    author as git-token will automatically set update
-    git-config with name and email during token retrieval.
+    git-token will encrypt (using gnupg) and store user data
+    to the directory ~/.local/share/git-token.
 
     > git-token adam xxyyzz
 
 Loading a token
-    The program will try to decrypt the file
-    ~/.local/share/git-token/adam, print the contents, and
-    call git credential to save the login credentials for a
+    The program will try to decrypt the token, print it, and
+    call git-credential to save the login credentials for a
     limited time.
 
     > git-token adam
+
+
+    By supplying
+    name and email the user can rest assured it is he/she
+    that authored the last commit as git-token will
+    automatically check git-config during token retrieval
+    and warn you if necessary.
+
 EOF
 }
 

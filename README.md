@@ -5,49 +5,57 @@ Manage git tokens with password encrypted files.
 
 ## Installation
 
-### `make install`
-
-This repo contains a submodule, clone and install by:
 ```
 git clone https://github.com/kaarmu/git-token
 cd git-token
 make install
 ```
 
-*Note:* `~/.local/bin` *needs to be in* `PATH`.
-
-### Manual
-
-Clone the repo and submodule
-```
-git clone --recurse-submodules https://github.com/kaarmu/git-token
-```
-The script needs to be moved to somewhere in `PATH`, e.g. `~/.local/bin` is a good directory for this.
-After making sure `~/.local/bin~` is in `PATH` then copy the script to there and set it to executable.
-Aslo, move existing tokens to `~/.local/share/git-token`.
-```
-cp git-token/src/git-token ~/.local/bin
-sudo chmod 775 ~/.local/bin/git-token
-mkdir -p ~/.local/share/git-token
-cp git-token/tokens/* ~/.local/share/git-token
-```
+**Note:** `~/.local/bin` needs to be in `PATH`.
 
 ## Usage
 
-To save a token: git-token adam xxyyzz
-The program will encrypt with gnupg a file named "adam"
-containing "xxyyzz" to the directory ~/.local/share/git-token.
+**Saving a token**
 
-To load a token: git-token adam
-The program will try to decrypt the file
-~/.local/share/git-token/adam, print the contents, and call
-git credential to save the login credentials for a limited time.
+git-token will encrypt (using gnupg) and store user data
+to the directory ~/.local/share/git-token.
 
-To use git credential you only need to specify the `-e` option
-and `git-token` will enable `git-credential-cache`. And that is
-not all! Now `git-token` will also configure the user & email if 
-it can. Read more using the `-h` option.
+```
+> git-token adam xxyyzz
+...
+```
+
+**Loading a token**
+
+The program will try to decrypt the token, print it, and
+call git-credential to save the login credentials for a
+limited time.
+
+```
+> git-token adam
+Password:
+Found token "xxyyzz" and cached it for a limited time.
+```
+
+**Enabling git credentials**
+
+To use `git-credential-cache`, an important part of `git-token`,
+you only need to call `git-token` the `-e` option once and
+`git-token` will enable `git-credential-cache` for you.
+
+**Fixing author**
+
+If you have made a commit under the wrong authorship `git-token`
+will help you easily solve that with one command. Call
+`git-token` with the `--recommit` option and `git-token` will
+re-commit the last commit (with the same message) using you
+as the author
+
+```
+> git token --recommit adam
+```
 
 ## Dependencies:
 - `git`, of course
 - `gnupg`, installed almost everywhere
+- `make`, for installation
