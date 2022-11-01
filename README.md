@@ -1,7 +1,6 @@
 # git-token
-Manage git tokens with password encrypted files.
 
-*This repository is for my convenience, please see the original [gist](https://gist.github.com/kaarmu/2bad1f7bba79868e4bf894c280c51ade).*
+Manage git tokens with password encrypted files.
 
 ## Installation
 
