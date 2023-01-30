@@ -36,6 +36,9 @@ OPTIONS
 
     -f, --force         Write over any existing token.
 
+    -u, --update        Update token for existing user.
+                        Requires TOKEN argument is set.
+
     -t SEC              Set git credential-cache timeout to
         --timeout=SEC   SECONDS (default "900"). Can only
                         be used with -e option.
@@ -186,6 +189,7 @@ assert_command git gpg
 REMOVE=0
 ENABLE=0
 FORCE=0
+UPDATE=0
 TIMEOUT=900
 ONLY_TOKEN=0
 RECOMMIT=0
@@ -196,7 +200,7 @@ EMAIL=""
 DOMAIN="github.com"
 
 # parse program arguments
-while getopts ":herft:d:-:" OPT; do
+while getopts ":herfut:d:-:" OPT; do
     if [ "$OPT" = "-" ]; then
         OPT="${OPTARG%%=*}"
         OPTARG="${OPTARG#"$OPT"}"
@@ -207,6 +211,7 @@ while getopts ":herft:d:-:" OPT; do
         e | enable ) ENABLE=1 ;;
         r | remove ) REMOVE=1 ;;
         f | force ) FORCE=1 ;;
+        u | update ) UPDATE=1 ;;
         t | timeout ) TIMEOUT="$OPTARG" ;;
         only-token ) ONLY_TOKEN=1 ;;
         recommit ) RECOMMIT=1 ;;
@@ -226,6 +231,7 @@ case "$#" in
         USERNAME=$1
         [ $ENABLE -ne 0 ] && _enable "$TIMEOUT"
         [ $REMOVE -ne 0 ] && _remove "$USERNAME" && exit 0
+        [ $UPDATE -ne 0 ] && panic "Missing argument TOKEN"
         ;;
     2 )
         USERNAME=$1
@@ -243,9 +249,21 @@ esac
 
 USER_DIR="$(_find_user "$USERNAME")"
 
-if [ -n "$TOKEN" ]; then
+if [ $UPDATE -ne 0 ]; then
 
-    ## encrypt ##
+    case "$USER_DIR" in
+        : ) panic "Cannot find user \"$USERNAME\"." ;;
+        * ) ;;
+    esac
+
+    prompt_secret PASSWD '' "Password: "
+
+    gpg --batch --passphrase "$PASSWD" -d "$USER_DIR/token" > /dev/null 2>&1
+    [ $? -ne 0 ] && panic "Password was incorrect"
+
+    echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$USER_DIR/token" -c || panic $? "Encryption failed"
+
+elif [ -n "$TOKEN" ]; then
 
     case "$USER_DIR" in
         : ) ;;
@@ -271,8 +289,6 @@ if [ -n "$TOKEN" ]; then
     echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$USER_DIR/token" -c || panic $? "Encryption failed"
 
 else
-
-    ## decrypt ##
 
     case "$USER_DIR" in
         : ) panic "Cannot find user \"$USERNAME\"." ;;
