@@ -7,7 +7,7 @@
 install:
 	# Install any potential tokens
 	mkdir -p ${HOME}/.local/share/git-token
-ifneq (,"$(wildcard tokens/*)")
+ifneq (,$(wildcard tokens/*))
 	cp -r tokens/* ${HOME}/.local/share/git-token
 endif
 	# Install the git-token script
