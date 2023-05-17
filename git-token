@@ -141,7 +141,7 @@ prompt_secret() {
 
 # Enable git credentials
 _enable() {
-    git config --global credential.helper "cache --timeout $1" || exit $?
+    git config credential.helper "cache --timeout $1" || exit $?
 }
 
 # Remove user token
@@ -302,8 +302,8 @@ else
     esac
 
     if [ "$ONLY_TOKEN" -eq 0 ]; then
-        [ -f "$USER_DIR/name" ] && NAME="$(cat "$USER_DIR/name")" && git config --global user.name "$NAME"
-        [ -f "$USER_DIR/email" ] && EMAIL="$(cat "$USER_DIR/email")" && git config --global user.email "$EMAIL"
+        [ -f "$USER_DIR/name" ] && NAME="$(cat "$USER_DIR/name")" && git config user.name "$NAME"
+        [ -f "$USER_DIR/email" ] && EMAIL="$(cat "$USER_DIR/email")" && git config user.email "$EMAIL"
     fi
 
     prompt_secret PASSWD '' "Password: "
