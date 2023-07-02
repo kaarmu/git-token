@@ -139,9 +139,34 @@ prompt_secret() {
     printf "\n"
 }
 
-# Enable git credentials
+# Test if inside a git repository 
+_is_git_repo() {
+    test -n "$(climb .git)"
+    return $?
+}
+
+# Enable git credentials parameter
 _enable() {
-    git config credential.helper "cache --timeout $1" || exit $?
+    git config --global credential.helper "cache --timeout $1" || exit $?
+}
+
+# Get current credentials setting
+_get_credential() {
+    echo "$(index 1 $(git config credential.helper))"
+}
+
+# Test if credential is a certain value
+# _is_credential TYPE
+_credential_is() {
+    test "$(_get_credential)" = "$1"
+    return $?
+}
+
+# Set new user
+# > _set_user NAME EMAIL
+_set_user() {
+    git config --global user.name "$1"
+    git config --global user.email "$2"
 }
 
 # Remove user token
@@ -224,7 +249,7 @@ shift $((OPTIND-1))
 # get program positional arguments
 case "$#" in
     0 )
-        [ "$ENABLE" -ne 0 ] && _enable "$TIMEOUT" && exit 0
+        [ "$ENABLE" -eq 0 ] && _enable "$TIMEOUT" && exit 0
         panic "Missing argument USERNAME"
         ;;
     1 )
@@ -301,9 +326,10 @@ else
         * ) DOMAIN="$(basename "$(dirname "$USER_DIR")")" ;;
     esac
 
-    if [ "$ONLY_TOKEN" -eq 0 ]; then
-        [ -f "$USER_DIR/name" ] && NAME="$(cat "$USER_DIR/name")" && git config user.name "$NAME"
-        [ -f "$USER_DIR/email" ] && EMAIL="$(cat "$USER_DIR/email")" && git config user.email "$EMAIL"
+    if [ "$ONLY_TOKEN" -eq 0 ] && [ -f "$USER_DIR/name" ] && [ -f "$USER_DIR/email" ]; then
+        NAME="$(cat "$USER_DIR/name")"
+        EMAIL="$(cat "$USER_DIR/email")"
+        _set_user "$NAME" "$EMAIL"
     fi
 
     prompt_secret PASSWD '' "Password: "
@@ -312,30 +338,26 @@ else
     [ -z "$SECRET" ] && panic "Password was incorrect"
     _approve "https://$DOMAIN" "$USERNAME" "$SECRET" || panic $? "Approval failed"
 
-    CRED_HELPER="$(index 1 $(git config credential.helper))"
-
-    if [ "$CRED_HELPER" = "cache" ]; then
+    if _credential_is "cache"; then
         echo "Found token \"$SECRET\" and cached it for a limited time."
     else
         echo "Found token \"$SECRET\"."
     fi
 
-    if [ "$RECOMMIT" -eq 1 ]; then
-        _recommit
-    fi
+    [ "$RECOMMIT" -eq 1 ] && _recommit
 
     # Warnings
 
-    if [ -n "$(climb .git)" ] && [ "$ONLY_TOKEN" -eq 0 ] && [ "$(_get_last_author)" != "$NAME <$EMAIL>" ]; then
+    if _is_git_repo && [ "$ONLY_TOKEN" -eq 0 ] && [ "$(_get_last_author)" != "$NAME <$EMAIL>" ]; then
         echo ""
         echo "WARNING: The last commit seems to have been made by someone other than you."
-        echo "Is this correct? The commit was done by"
+        echo "This might be correct, check 'git log'. The commit was done by"
         echo "  $(_get_last_author)"
     fi
 
-    if [ "$CRED_HELPER" != "cache" ]; then
+    if ! _credential_is "cache"; then
         echo ""
-        echo "$CRED_HELPER"
+        echo "$(_get_credential)"
         echo "WARNING: git credential-cache is disabled, you will have to enter the token"
         echo "manually or run git-token again after enabling. Enable git credential-cache"
         echo "globally with"
