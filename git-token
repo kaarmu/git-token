@@ -290,8 +290,6 @@ if [ $UPDATE -ne 0 ]; then
 
 	echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$USER_DIR/token" -c || panic $? "Encryption failed"
 
-	[ $ONLY_TOKEN -ne 0 ] && echo "$TOKEN" | docker login ghcr.io -u "$USERNAME" --password-stdin
-
 elif [ -n "$TOKEN" ]; then
 
 	case "$USER_DIR" in
@@ -349,6 +347,8 @@ else
 	fi
 
 	[ "$RECOMMIT" -eq 1 ] && _recommit
+
+	[ $LOGIN_GHCR -ne 0 ] && echo "$SECRET" | docker login ghcr.io -u "$USERNAME" --password-stdin
 
 	# Warnings
 
