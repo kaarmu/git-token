@@ -3,27 +3,23 @@
 #
 # Author: Kaj Munhoz Arfvidsson
 
-
 ###############
 ## CONSTANTS ##
 ###############
 
-
 DATA_DIR="$HOME/.local/share/git-token"
-
 
 ###############
 ## FUNCTIONS ##
 ###############
 
-
 usage() {
-    echo 'Usage: git-token [OPTIONS] USERNAME [TOKEN]'
+	echo 'Usage: git-token [OPTIONS] USERNAME [TOKEN]'
 }
 
 help() {
-    usage
-    cat << EOF
+	usage
+	cat <<EOF
 Manage git tokens with password protected files.
 
 OPTIONS
@@ -47,6 +43,9 @@ OPTIONS
 
         --recommit      Redo the last commit but using the
                         current author.
+
+        --login-ghcr    Sign in to the GitHub Container
+                        Registry.
 
 Saving a token
     git-token will encrypt (using gnupg) and store user data
@@ -74,139 +73,137 @@ EOF
 # Return the argument at index
 # > index [-]NUM [ARGS...]
 index() {
-    [ $# -lt 2 ] && return 1
-    [ "$1" -gt 0 ] && i=$1 || i=$(($# + $1))
-    [ "$i" -le 0 ] && echo "" || ( shift $i && echo "$1" )
+	[ $# -lt 2 ] && return 1
+	[ "$1" -gt 0 ] && i=$1 || i=$(($# + $1))
+	[ "$i" -le 0 ] && echo "" || (shift $i && echo "$1")
 }
 
 # Print error and exit
 # > panic [CODE] MESSAGE
 panic() {
-    usage
-    [ $# -gt 1 ] && CODE=$1 && shift || CODE=1
-    echo "Error ($CODE): $1"
-    exit $CODE
+	usage
+	[ $# -gt 1 ] && CODE=$1 && shift || CODE=1
+	echo "Error ($CODE): $1"
+	exit $CODE
 }
 
 # Climb directories to find an existing path CHILD
 # > climb CHILD [ PARENT ]
 climb() {
-    CHILD="$1"
-    PARENT="$(realpath "${2:-$PWD}")"
-    [ -e "$PARENT/$CHILD" ] && echo "$PARENT" && return 0
-    [ "$PARENT" = "/" ] && return 1
-    climb "$CHILD" "$PARENT/.."
-    return $?
+	CHILD="$1"
+	PARENT="$(realpath "${2:-$PWD}")"
+	[ -e "$PARENT/$CHILD" ] && echo "$PARENT" && return 0
+	[ "$PARENT" = "/" ] && return 1
+	climb "$CHILD" "$PARENT/.."
+	return $?
 }
 
 # Assert there exist commands
 # > assert_command [COMMANDS...]
 assert_command() {
-    for cmd in "$@"; do
-        [ ! "$(command -v "$cmd")" ] && panic "Missing command \"$cmd\". Is it installed?"
-    done
+	for cmd in "$@"; do
+		[ ! "$(command -v "$cmd")" ] && panic "Missing command \"$cmd\". Is it installed?"
+	done
 }
 
 # Get value of variable by name
 # > lookup VAR
 lookup() {
-    eval "echo \$${1?}"
+	eval "echo \$${1?}"
 }
 
 # Set value of variable by name
 # > assign VAR VALUE
 assign() {
-    eval "${1?}=${2?}"
+	eval "${1?}=${2?}"
 }
 
 # Prompt user of something
 # > prompt VAR DEFAULT MESSAGE...
 prompt() {
-    VAR="${1?}"
-    VAL="$2"
-    shift 2
-    printf "$*"
-    read -r "$VAR"
-    [ -z "$(lookup "$VAR")" ] && assign "$VAR" "$VAL"
+	VAR="${1?}"
+	VAL="$2"
+	shift 2
+	printf "$*"
+	read -r "$VAR"
+	[ -z "$(lookup "$VAR")" ] && assign "$VAR" "$VAL"
 }
 
 # Prompt user of something that shouldn't be echoed
 # > prompt_secret VAR DEFAULT MESSAGE
 prompt_secret() {
-    stty -echo
-    prompt "$@"
-    stty echo
-    printf "\n"
+	stty -echo
+	prompt "$@"
+	stty echo
+	printf "\n"
 }
 
-# Test if inside a git repository 
+# Test if inside a git repository
 _is_git_repo() {
-    test -n "$(climb .git)"
-    return $?
+	test -n "$(climb .git)"
+	return $?
 }
 
 # Enable git credentials parameter
 _enable() {
-    git config --global credential.helper "cache --timeout $1" || exit $?
+	git config --global credential.helper "cache --timeout $1" || exit $?
 }
 
 # Get current credentials setting
 _get_credential() {
-    echo "$(index 1 $(git config credential.helper))"
+	echo "$(index 1 $(git config credential.helper))"
 }
 
 # Test if credential is a certain value
 # _is_credential TYPE
 _credential_is() {
-    test "$(_get_credential)" = "$1"
-    return $?
+	test "$(_get_credential)" = "$1"
+	return $?
 }
 
 # Set new user
 # > _set_user NAME EMAIL
 _set_user() {
-    git config --global user.name "$1"
-    git config --global user.email "$2"
+	git config --global user.name "$1"
+	git config --global user.email "$2"
 }
 
 # Remove user token
 _remove() {
-    rm -r "$DATA_DIR/${1:?}" || exit $?
+	rm -r "$DATA_DIR/${1:?}" || exit $?
 }
 
 # Approve git credential with _approve URL USERNAME PASSWORD
 _approve() {
-    git credential approve << EOF
+	git credential approve <<EOF
 url=$1
 username=$2
 password=$3
 EOF
-return $?
+	return $?
 }
 
 _get_last_author() {
-    git log -1 --pretty=format:'%an <%ae>'
+	git log -1 --pretty=format:'%an <%ae>'
 }
 
 _recommit() {
-    git commit --amend -C HEAD --reset-author
+	git commit --amend -C HEAD --reset-author
 }
 
 # Search for user of NAME
 # > _find_user NAME
 _find_user() {
-    case "$(find "$DATA_DIR" -name "$1" | wc -l)" in
-        0 ) echo ":" ;;
-        1 ) echo "$(find "$DATA_DIR" -name "$1")" ;;
-        * ) echo "@" ;;
-    esac
+	case "$(find "$DATA_DIR" -name "$1" | wc -l)" in
+	0) echo ":" ;;
+	1) echo "$(find "$DATA_DIR" -name "$1")" ;;
+	*) echo "@" ;;
+	esac
 }
-
 
 ############
 ## SCRIPT ##
 ############
-
 
 assert_command git gpg
 
@@ -218,6 +215,7 @@ UPDATE=0
 TIMEOUT=900
 ONLY_TOKEN=0
 RECOMMIT=0
+LOGIN_GHCR=0
 USERNAME=""
 TOKEN=""
 NAME=""
@@ -226,47 +224,51 @@ DOMAIN="github.com"
 
 # parse program arguments
 while getopts ":herfut:d:-:" OPT; do
-    if [ "$OPT" = "-" ]; then
-        OPT="${OPTARG%%=*}"
-        OPTARG="${OPTARG#"$OPT"}"
-        OPTARG="${OPTARG#=}"
-    fi
-    case $OPT in
-        h | help ) help ; exit 0 ;;
-        e | enable ) ENABLE=1 ;;
-        r | remove ) REMOVE=1 ;;
-        f | force ) FORCE=1 ;;
-        u | update ) UPDATE=1 ;;
-        t | timeout ) TIMEOUT="$OPTARG" ;;
-        only-token ) ONLY_TOKEN=1 ;;
-        recommit ) RECOMMIT=1 ;;
-        : ) panic "Missing argument to \"$OPTARG\"" ;;
-        * ) panic "Unrecognized option \"$OPTARG\"" ;;
-    esac
+	if [ "$OPT" = "-" ]; then
+		OPT="${OPTARG%%=*}"
+		OPTARG="${OPTARG#"$OPT"}"
+		OPTARG="${OPTARG#=}"
+	fi
+	case $OPT in
+	h | help)
+		help
+		exit 0
+		;;
+	e | enable) ENABLE=1 ;;
+	r | remove) REMOVE=1 ;;
+	f | force) FORCE=1 ;;
+	u | update) UPDATE=1 ;;
+	t | timeout) TIMEOUT="$OPTARG" ;;
+	only-token) ONLY_TOKEN=1 ;;
+	recommit) RECOMMIT=1 ;;
+	login-ghcr) LOGIN_GHCR=1 ;;
+	:) panic "Missing argument to \"$OPTARG\"" ;;
+	*) panic "Unrecognized option \"$OPTARG\"" ;;
+	esac
 done
-shift $((OPTIND-1))
+shift $((OPTIND - 1))
 
 # get program positional arguments
 case "$#" in
-    0 )
-        [ "$ENABLE" -eq 0 ] && _enable "$TIMEOUT" && exit 0
-        panic "Missing argument USERNAME"
-        ;;
-    1 )
-        USERNAME=$1
-        [ $ENABLE -ne 0 ] && _enable "$TIMEOUT"
-        [ $REMOVE -ne 0 ] && _remove "$USERNAME" && exit 0
-        [ $UPDATE -ne 0 ] && panic "Missing argument TOKEN"
-        ;;
-    2 )
-        USERNAME=$1
-        TOKEN=$2
-        [ $ENABLE -ne 0 ] && _enable "$TIMEOUT"
-        [ $REMOVE -ne 0 ] && echo "Replacing token for \"$USERNAME\"" && _remove "$USERNAME"
-        ;;
-    * )
-        panic "Too many arguments"
-        ;;
+0)
+	[ "$ENABLE" -eq 0 ] && _enable "$TIMEOUT" && exit 0
+	panic "Missing argument USERNAME"
+	;;
+1)
+	USERNAME=$1
+	[ $ENABLE -ne 0 ] && _enable "$TIMEOUT"
+	[ $REMOVE -ne 0 ] && _remove "$USERNAME" && exit 0
+	[ $UPDATE -ne 0 ] && panic "Missing argument TOKEN"
+	;;
+2)
+	USERNAME=$1
+	TOKEN=$2
+	[ $ENABLE -ne 0 ] && _enable "$TIMEOUT"
+	[ $REMOVE -ne 0 ] && echo "Replacing token for \"$USERNAME\"" && _remove "$USERNAME"
+	;;
+*)
+	panic "Too many arguments"
+	;;
 esac
 
 # get token from stdin if the token is, e.g. piped in
@@ -276,92 +278,94 @@ USER_DIR="$(_find_user "$USERNAME")"
 
 if [ $UPDATE -ne 0 ]; then
 
-    case "$USER_DIR" in
-        : ) panic "Cannot find user \"$USERNAME\"." ;;
-        * ) ;;
-    esac
+	case "$USER_DIR" in
+	:) panic "Cannot find user \"$USERNAME\"." ;;
+	*) ;;
+	esac
 
-    prompt_secret PASSWD '' "Password: "
+	prompt_secret PASSWD '' "Password: "
 
-    gpg --batch --passphrase "$PASSWD" -d "$USER_DIR/token" > /dev/null 2>&1
-    [ $? -ne 0 ] && panic "Password was incorrect"
+	gpg --batch --passphrase "$PASSWD" -d "$USER_DIR/token" >/dev/null 2>&1
+	[ $? -ne 0 ] && panic "Password was incorrect"
 
-    echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$USER_DIR/token" -c || panic $? "Encryption failed"
+	echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$USER_DIR/token" -c || panic $? "Encryption failed"
+
+	[ $ONLY_TOKEN -ne 0 ] && echo "$TOKEN" | docker login ghcr.io -u "$USERNAME" --password-stdin
 
 elif [ -n "$TOKEN" ]; then
 
-    case "$USER_DIR" in
-        : ) ;;
-        * ) echo "WARNING: This username has been found under one or more domains." ;;
-    esac
+	case "$USER_DIR" in
+	:) ;;
+	*) echo "WARNING: This username has been found under one or more domains." ;;
+	esac
 
-    prompt DOMAIN "$DOMAIN" "Domain ($DOMAIN): "
-    USER_DIR="$DATA_DIR/$DOMAIN/$USERNAME"
+	prompt DOMAIN "$DOMAIN" "Domain ($DOMAIN): "
+	USER_DIR="$DATA_DIR/$DOMAIN/$USERNAME"
 
-    if [ ! -d "$USER_DIR" ]; then
-        mkdir -p "$USER_DIR"
-    else
-        [ $FORCE -eq 0 ] && panic "This user already exists."
-    fi
+	if [ ! -d "$USER_DIR" ]; then
+		mkdir -p "$USER_DIR"
+	else
+		[ $FORCE -eq 0 ] && panic "This user already exists."
+	fi
 
-    prompt NAME '' "Name (optional): "
-    prompt EMAIL '' "Email (optional): "
+	prompt NAME '' "Name (optional): "
+	prompt EMAIL '' "Email (optional): "
 
-    prompt_secret PASSWD '' "Password: "
+	prompt_secret PASSWD '' "Password: "
 
-    [ -n "$NAME" ] && echo "$NAME" > "$USER_DIR/name"
-    [ -n "$EMAIL" ] && echo "$EMAIL" > "$USER_DIR/email"
-    echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$USER_DIR/token" -c || panic $? "Encryption failed"
+	[ -n "$NAME" ] && echo "$NAME" >"$USER_DIR/name"
+	[ -n "$EMAIL" ] && echo "$EMAIL" >"$USER_DIR/email"
+	echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$USER_DIR/token" -c || panic $? "Encryption failed"
 
 else
 
-    case "$USER_DIR" in
-        : ) panic "Cannot find user \"$USERNAME\"." ;;
-        @ )
-            echo "Found multiple users with the name \"$USERNAME\", please specify domain."
-            prompt DOMAIN "$DOMAIN" "Domain ($DOMAIN): "
-            USER_DIR="$DATA_DIR/$DOMAIN/$USERNAME"
-            [ ! -d "$USER_DIR" ] && panic "The user does not exist under domain \"$DOMAIN\"."
-            ;;
-        * ) DOMAIN="$(basename "$(dirname "$USER_DIR")")" ;;
-    esac
+	case "$USER_DIR" in
+	:) panic "Cannot find user \"$USERNAME\"." ;;
+	@)
+		echo "Found multiple users with the name \"$USERNAME\", please specify domain."
+		prompt DOMAIN "$DOMAIN" "Domain ($DOMAIN): "
+		USER_DIR="$DATA_DIR/$DOMAIN/$USERNAME"
+		[ ! -d "$USER_DIR" ] && panic "The user does not exist under domain \"$DOMAIN\"."
+		;;
+	*) DOMAIN="$(basename "$(dirname "$USER_DIR")")" ;;
+	esac
 
-    if [ "$ONLY_TOKEN" -eq 0 ] && [ -f "$USER_DIR/name" ] && [ -f "$USER_DIR/email" ]; then
-        NAME="$(cat "$USER_DIR/name")"
-        EMAIL="$(cat "$USER_DIR/email")"
-        _set_user "$NAME" "$EMAIL"
-    fi
+	if [ "$ONLY_TOKEN" -eq 0 ] && [ -f "$USER_DIR/name" ] && [ -f "$USER_DIR/email" ]; then
+		NAME="$(cat "$USER_DIR/name")"
+		EMAIL="$(cat "$USER_DIR/email")"
+		_set_user "$NAME" "$EMAIL"
+	fi
 
-    prompt_secret PASSWD '' "Password: "
+	prompt_secret PASSWD '' "Password: "
 
-    SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$USER_DIR/token" 2> /dev/null)
-    [ -z "$SECRET" ] && panic "Password was incorrect"
-    _approve "https://$DOMAIN" "$USERNAME" "$SECRET" || panic $? "Approval failed"
+	SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$USER_DIR/token" 2>/dev/null)
+	[ -z "$SECRET" ] && panic "Password was incorrect"
+	_approve "https://$DOMAIN" "$USERNAME" "$SECRET" || panic $? "Approval failed"
 
-    if _credential_is "cache"; then
-        echo "Found token \"$SECRET\" and cached it for a limited time."
-    else
-        echo "Found token \"$SECRET\"."
-    fi
+	if _credential_is "cache"; then
+		echo "Found token \"$SECRET\" and cached it for a limited time."
+	else
+		echo "Found token \"$SECRET\"."
+	fi
 
-    [ "$RECOMMIT" -eq 1 ] && _recommit
+	[ "$RECOMMIT" -eq 1 ] && _recommit
 
-    # Warnings
+	# Warnings
 
-    if _is_git_repo && [ "$ONLY_TOKEN" -eq 0 ] && [ "$(_get_last_author)" != "$NAME <$EMAIL>" ]; then
-        echo ""
-        echo "WARNING: The last commit seems to have been made by someone other than you."
-        echo "This might be correct, check 'git log'. The commit was done by"
-        echo "  $(_get_last_author)"
-    fi
+	if _is_git_repo && [ "$ONLY_TOKEN" -eq 0 ] && [ "$(_get_last_author)" != "$NAME <$EMAIL>" ]; then
+		echo ""
+		echo "WARNING: The last commit seems to have been made by someone other than you."
+		echo "This might be correct, check 'git log'. The commit was done by"
+		echo "  $(_get_last_author)"
+	fi
 
-    if ! _credential_is "cache"; then
-        echo ""
-        echo "$(_get_credential)"
-        echo "WARNING: git credential-cache is disabled, you will have to enter the token"
-        echo "manually or run git-token again after enabling. Enable git credential-cache"
-        echo "globally with"
-        echo "> git token -e"
-    fi
+	if ! _credential_is "cache"; then
+		echo ""
+		echo "$(_get_credential)"
+		echo "WARNING: git credential-cache is disabled, you will have to enter the token"
+		echo "manually or run git-token again after enabling. Enable git credential-cache"
+		echo "globally with"
+		echo "> git token -e"
+	fi
 
 fi
