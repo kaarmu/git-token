@@ -14,7 +14,7 @@ DATA_DIR="$HOME/.local/share/git-token"
 ###############
 
 usage() {
-	echo 'Usage: git-token [OPTIONS] USERNAME [TOKEN]'
+	echo 'Usage: git-token [OPTIONS] USER [TOKEN]'
 }
 
 help() {
@@ -147,6 +147,7 @@ _is_git_repo() {
 # Enable git credentials parameter
 _enable() {
 	git config --global credential.helper "cache --timeout $1" || exit $?
+	echo "Credentials helper enabled with $1 s timeout."
 }
 
 # Get current credentials setting
@@ -173,7 +174,7 @@ _remove() {
 	rm -r "$DATA_DIR/${1:?}" || exit $?
 }
 
-# Approve git credential with _approve URL USERNAME PASSWORD
+# Approve git credential with _approve URL USER PASSWORD
 _approve() {
 	git credential approve <<EOF
 url=$1
@@ -216,10 +217,11 @@ TIMEOUT=900
 ONLY_TOKEN=0
 RECOMMIT=0
 LOGIN_GHCR=0
-USERNAME=""
-TOKEN=""
-NAME=""
-EMAIL=""
+USER=""		# git-token username
+USERNAME="" 	# git-credential username
+TOKEN=""	# git-credential password
+NAME=""		# git-config name
+EMAIL=""	# git-config email
 DOMAIN="github.com"
 
 # parse program arguments
@@ -251,20 +253,20 @@ shift $((OPTIND - 1))
 # get program positional arguments
 case "$#" in
 0)
-	[ "$ENABLE" -eq 0 ] && _enable "$TIMEOUT" && exit 0
-	panic "Missing argument USERNAME"
+	[ "$ENABLE" -ne 0 ] && _enable "$TIMEOUT" && exit 0
+	panic "Missing argument USER"
 	;;
 1)
-	USERNAME=$1
+	USER=$1
 	[ $ENABLE -ne 0 ] && _enable "$TIMEOUT"
-	[ $REMOVE -ne 0 ] && _remove "$USERNAME" && exit 0
+	[ $REMOVE -ne 0 ] && _remove "$USER" && exit 0
 	[ $UPDATE -ne 0 ] && panic "Missing argument TOKEN"
 	;;
 2)
-	USERNAME=$1
+	USER=$1
 	TOKEN=$2
 	[ $ENABLE -ne 0 ] && _enable "$TIMEOUT"
-	[ $REMOVE -ne 0 ] && echo "Replacing token for \"$USERNAME\"" && _remove "$USERNAME"
+	[ $REMOVE -ne 0 ] && echo "Replacing token for \"$USER\"" && _remove "$USER"
 	;;
 *)
 	panic "Too many arguments"
@@ -274,12 +276,12 @@ esac
 # get token from stdin if the token is, e.g. piped in
 [ -p /dev/stdin ] && read -r TOKEN
 
-USER_DIR="$(_find_user "$USERNAME")"
+USER_DIR="$(_find_user "$USER")"
 
 if [ $UPDATE -ne 0 ]; then
 
 	case "$USER_DIR" in
-	:) panic "Cannot find user \"$USERNAME\"." ;;
+	:) panic "Cannot find user \"$USER\"." ;;
 	*) ;;
 	esac
 
@@ -298,7 +300,7 @@ elif [ -n "$TOKEN" ]; then
 	esac
 
 	prompt DOMAIN "$DOMAIN" "Domain ($DOMAIN): "
-	USER_DIR="$DATA_DIR/$DOMAIN/$USERNAME"
+	USER_DIR="$DATA_DIR/$DOMAIN/$USER"
 
 	if [ ! -d "$USER_DIR" ]; then
 		mkdir -p "$USER_DIR"
@@ -306,11 +308,13 @@ elif [ -n "$TOKEN" ]; then
 		[ $FORCE -eq 0 ] && panic "This user already exists."
 	fi
 
-	prompt NAME '' "Name (optional): "
-	prompt EMAIL '' "Email (optional): "
+	prompt USERNAME "$USER"	"Username ($USER): "
+	prompt NAME 	"" 	"Name (optional): "
+	prompt EMAIL 	"" 	"Email (optional): "
 
-	prompt_secret PASSWD '' "Password: "
+	prompt_secret PASSWD "" "Password: "
 
+	[ -n "$USERNAME" ] && echo "$USERNAME" >"$USER_DIR/username"
 	[ -n "$NAME" ] && echo "$NAME" >"$USER_DIR/name"
 	[ -n "$EMAIL" ] && echo "$EMAIL" >"$USER_DIR/email"
 	echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$USER_DIR/token" -c || panic $? "Encryption failed"
@@ -318,17 +322,18 @@ elif [ -n "$TOKEN" ]; then
 else
 
 	case "$USER_DIR" in
-	:) panic "Cannot find user \"$USERNAME\"." ;;
+	:) panic "Cannot find user \"$USER\"." ;;
 	@)
-		echo "Found multiple users with the name \"$USERNAME\", please specify domain."
+		echo "Found multiple users with the name \"$USER\", please specify domain."
 		prompt DOMAIN "$DOMAIN" "Domain ($DOMAIN): "
-		USER_DIR="$DATA_DIR/$DOMAIN/$USERNAME"
+		USER_DIR="$DATA_DIR/$DOMAIN/$USER"
 		[ ! -d "$USER_DIR" ] && panic "The user does not exist under domain \"$DOMAIN\"."
 		;;
 	*) DOMAIN="$(basename "$(dirname "$USER_DIR")")" ;;
 	esac
 
 	if [ "$ONLY_TOKEN" -eq 0 ] && [ -f "$USER_DIR/name" ] && [ -f "$USER_DIR/email" ]; then
+		USERNAME="$(cat "$USER_DIR/username")"
 		NAME="$(cat "$USER_DIR/name")"
 		EMAIL="$(cat "$USER_DIR/email")"
 		_set_user "$NAME" "$EMAIL"
