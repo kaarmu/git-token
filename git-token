@@ -7,6 +7,7 @@
 ## CONSTANTS ##
 ###############
 
+VERSION="0.1.0"
 DATA_DIR="$HOME/.local/share/git-token"
 
 ###############
@@ -24,6 +25,8 @@ Manage git tokens with password protected files.
 
 OPTIONS
     -h, --help          Show this help message.
+
+    -v, --version       Print the git-token version.
 
     -e, --enable        Enable git credential-cache in
                         globally.
@@ -60,14 +63,11 @@ Loading a token
 
     > git-token adam
 
-
-    By supplying
-    name and email the user can rest assured it is he/she
-    that authored the last commit as git-token will
-    automatically check git-config during token retrieval
-    and warn you if necessary.
-
 EOF
+}
+
+version() {
+    echo "git-token version $VERSION"
 }
 
 # Return the argument at index
@@ -236,6 +236,10 @@ while getopts ":herfut:d:-:" OPT; do
 		help
 		exit 0
 		;;
+    v | version)
+        version
+        exit 0
+        ;;
 	e | enable) ENABLE=1 ;;
 	r | remove) REMOVE=1 ;;
 	f | force) FORCE=1 ;;
@@ -296,7 +300,7 @@ elif [ -n "$TOKEN" ]; then
 
 	case "$USER_DIR" in
 	:) ;;
-	*) echo "WARNING: This username has been found under one or more domains." ;;
+	*) echo "WARNING: This user has been found under one or more domains." ;;
 	esac
 
 	prompt DOMAIN "$DOMAIN" "Domain ($DOMAIN): "
