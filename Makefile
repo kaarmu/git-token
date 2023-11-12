@@ -27,3 +27,11 @@ update: install
 load:
 	# Get tokens from system and put in this repository
 	cp -rf ${HOME}/.local/share/git-token/* tokens
+
+## Documentation ##
+
+man/git-token.1.gz: man/git-token.1.scd
+	scdoc < $< > man/git-token.1
+	gzip man/git-token.1
+
+man: man/git-token.1.gz

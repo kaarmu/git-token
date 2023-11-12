@@ -16,22 +16,29 @@ make install
 
 **Saving a token**
 
-git-token will encrypt (using gnupg) and store user data
-to the directory ~/.local/share/git-token.
+git-token will encrypt and store your token. When calling this command,
 
 ```
-> git-token adam xxyyzz
-...
+git token adam xxyyzz
 ```
+
+you will be prompted a few questions. These include, which domain are you
+belonging (e.g. an enterprise GitHub solution? Default is just _github.com_),
+what is your username there, which password do you want to encrypt the token
+with.
+
 
 **Loading a token**
 
-The program will try to decrypt the token, print it, and
-call git-credential to save the login credentials for a
-limited time.
+The program will try to decrypt the token with the supplied password, print it,
+and call git-credential to temporarily cache the login credentials. The latter
+part will make it easier to interact with git since then the entire git suite
+will have access to the cached credentials for a limited time. 
+
+The following is an example of a user retreiving a token with git-token.
 
 ```
-> git-token adam
+$ git-token adam
 Password:
 Found token "xxyyzz" and cached it for a limited time.
 ```
@@ -48,13 +55,15 @@ If you have made a commit under the wrong authorship `git-token`
 will help you easily solve that with one command. Call
 `git-token` with the `--recommit` option and `git-token` will
 re-commit the last commit (with the same message) using you
-as the author
+as the author.
 
 ```
-> git token --recommit adam
+git token --recommit adam
 ```
 
 ## Dependencies:
 - `git`, of course
-- `gnupg`, installed almost everywhere
+- `gnupg`, for encryption
 - `make`, for installation
+- `scdoc`, for generating man pages
+- `gzip`, for compressing man pages
