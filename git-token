@@ -28,6 +28,8 @@ OPTIONS
 
     -v, --version       Print the git-token version.
 
+    -l, --list          Print users on this machine.
+
     -e, --enable        Enable git credential-cache in
                         globally.
 
@@ -67,7 +69,7 @@ EOF
 }
 
 version() {
-    echo "git-token version $VERSION"
+    echo "$VERSION"
 }
 
 # Return the argument at index
@@ -202,6 +204,12 @@ _find_user() {
 	esac
 }
 
+# List users
+# > _list_users
+_list_users() {
+    echo "NOT IMPLEMENTED"
+}
+
 ############
 ## SCRIPT ##
 ############
@@ -225,7 +233,7 @@ EMAIL=""	# git-config email
 DOMAIN="github.com"
 
 # parse program arguments
-while getopts ":herfut:d:-:" OPT; do
+while getopts ":hvlerfut:d:-:" OPT; do
 	if [ "$OPT" = "-" ]; then
 		OPT="${OPTARG%%=*}"
 		OPTARG="${OPTARG#"$OPT"}"
@@ -238,6 +246,10 @@ while getopts ":herfut:d:-:" OPT; do
 		;;
     v | version)
         version
+        exit 0
+        ;;
+    l | list)
+        _list_users
         exit 0
         ;;
 	e | enable) ENABLE=1 ;;
