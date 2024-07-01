@@ -115,22 +115,22 @@ lookup() {
 # Set value of variable by name
 # > assign VAR VALUE
 assign() {
-	eval "${1?}=${2?}"
+	eval "${1?}='${2?}'"
 }
 
 # Prompt user of something
-# > prompt VAR DEFAULT MESSAGE...
+# > prompt VARIABLE DEFAULT MESSAGE
 prompt() {
 	VAR="${1?}"
-	VAL="$2"
-	shift 2
-	printf "$*"
+	DEF="$2"
+	MSG="$3"
+	printf "$MSG${DEF:+" [$DEF]"}: "
 	read -r "$VAR"
-	[ -z "$(lookup "$VAR")" ] && assign "$VAR" "$VAL"
+	[ -z "$(lookup "$VAR")" ] && assign "$VAR" "$DEF"
 }
 
 # Prompt user of something that shouldn't be echoed
-# > prompt_secret VAR DEFAULT MESSAGE
+# > prompt_secret VARIABLE DEFAULT MESSAGE
 prompt_secret() {
 	stty -echo
 	prompt "$@"
@@ -200,6 +200,22 @@ _find_user() {
 	1) echo "$(find "$DATA_DIR" -name "$1")" ;;
 	*) echo "@" ;;
 	esac
+}
+
+# Read file into variable
+# > _read_file VARIABLE FILENAME
+_read_file() {
+	VAR="${1?}"
+	FILENAME="${2?}"
+	[ -f "$FILENAME" ] && assign "$VAR" "$(cat "$FILENAME")"
+}
+
+# Read file into variable
+# > _write_file VALUE FILENAME 
+_write_file() {
+	VALUE="${1?}"
+	FILENAME="${2?}"
+	[ -n "$VALUE" ] && echo "$VALUE" >"$FILENAME"
 }
 
 ############
@@ -289,7 +305,7 @@ if [ $UPDATE -ne 0 ]; then
 	*) ;;
 	esac
 
-	prompt_secret PASSWD '' "Password: "
+	prompt_secret PASSWD '' "Password"
 
 	gpg --batch --passphrase "$PASSWD" -d "$USER_DIR/token" >/dev/null 2>&1
 	[ $? -ne 0 ] && panic "Password was incorrect"
@@ -303,24 +319,31 @@ elif [ -n "$TOKEN" ]; then
 	*) echo "WARNING: This user has been found under one or more domains." ;;
 	esac
 
-	prompt DOMAIN "$DOMAIN" "Domain ($DOMAIN): "
+	prompt DOMAIN "$DOMAIN" "Domain"
 	USER_DIR="$DATA_DIR/$DOMAIN/$USER"
 
-	if [ ! -d "$USER_DIR" ]; then
-		mkdir -p "$USER_DIR"
-	else
+	if [ -d "$USER_DIR" ]; then
 		[ $FORCE -eq 0 ] && panic "This user already exists."
+		_read_file USERNAME "$USER_DIR/username"
+		_read_file NAME     "$USER_DIR/name"
+		_read_file EMAIL    "$USER_DIR/email"
+	else
+		mkdir -p "$USER_DIR"
+		USERNAME="$USER"
+		NAME=""
+		EMAIL=""
 	fi
 
-	prompt USERNAME "$USER"	"Username ($USER): "
-	prompt NAME 	"" 	"Name (optional): "
-	prompt EMAIL 	"" 	"Email (optional): "
+	prompt USERNAME "$USERNAME" "Username"
+	prompt NAME     "$NAME"     "Name"
+	prompt EMAIL    "$EMAIL"    "Email"
 
-	prompt_secret PASSWD "" "Password: "
+	prompt_secret PASSWD "" "Password"
 
-	[ -n "$USERNAME" ] && echo "$USERNAME" >"$USER_DIR/username"
-	[ -n "$NAME" ] && echo "$NAME" >"$USER_DIR/name"
-	[ -n "$EMAIL" ] && echo "$EMAIL" >"$USER_DIR/email"
+	_write_file "$USERNAME" "$USER_DIR/username"
+	_write_file "$NAME"     "$USER_DIR/name"
+	_write_file "$EMAIL"    "$USER_DIR/email"
+
 	echo "$TOKEN" | gpg --batch --yes --passphrase "$PASSWD" -o "$USER_DIR/token" -c || panic $? "Encryption failed"
 
 else
@@ -329,7 +352,7 @@ else
 	:) panic "Cannot find user \"$USER\"." ;;
 	@)
 		echo "Found multiple users with the name \"$USER\", please specify domain."
-		prompt DOMAIN "$DOMAIN" "Domain ($DOMAIN): "
+		prompt DOMAIN "$DOMAIN" "Domain"
 		USER_DIR="$DATA_DIR/$DOMAIN/$USER"
 		[ ! -d "$USER_DIR" ] && panic "The user does not exist under domain \"$DOMAIN\"."
 		;;
@@ -337,13 +360,13 @@ else
 	esac
 
 	if [ "$ONLY_TOKEN" -eq 0 ] && [ -f "$USER_DIR/name" ] && [ -f "$USER_DIR/email" ]; then
-		USERNAME="$(cat "$USER_DIR/username")"
-		NAME="$(cat "$USER_DIR/name")"
-		EMAIL="$(cat "$USER_DIR/email")"
+		_read_file USERNAME "$USER_DIR/username"
+		_read_file NAME     "$USER_DIR/name"
+		_read_file EMAIL    "$USER_DIR/email"
 		_set_user "$NAME" "$EMAIL"
 	fi
 
-	prompt_secret PASSWD '' "Password: "
+	prompt_secret PASSWD '' "Password"
 
 	SECRET=$(gpg --batch --passphrase "$PASSWD" -d "$USER_DIR/token" 2>/dev/null)
 	[ -z "$SECRET" ] && panic "Password was incorrect"
