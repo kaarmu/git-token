@@ -12,7 +12,7 @@ ifneq (,$(wildcard tokens/*))
 endif
 	# Install the git-token script
 	mkdir -p ${HOME}/.local/bin
-	install -m=775 ./git-token ${HOME}/.local/bin/git-token
+	install -m 775 ./git-token ${HOME}/.local/bin/git-token
 
 uninstall:
 	# Remove tokens
